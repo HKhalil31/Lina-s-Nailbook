@@ -62,6 +62,9 @@ main{flex:1;padding:0 16px 90px}
   width:40px;height:40px;border-radius:12px;background:var(--surface);border:1.5px solid var(--line);
   display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex:none;box-shadow:var(--shadow);
 }
+.sugg{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+.suggitem{text-align:left;background:var(--accent-soft);color:var(--accent);border-radius:10px;padding:9px 12px;font-weight:700;font-size:14px}
+.suggitem span{color:var(--muted);font-weight:400;font-size:12px}
 a.wa{width:38px;height:38px;border-radius:50%;background:var(--good-soft);border:0;
   display:inline-flex;align-items:center;justify-content:center;font-size:17px;flex:none;
   text-decoration:none;align-self:center}
@@ -639,8 +642,25 @@ function readClientForm(c){c.name=$("#c-name").value.trim()||c.name;c.key=nameKe
   c.reminderDate=$("#c-rdate").value||"";c.reminderNote=$("#c-rnote").value.trim();return c;}
 
 /* ---------------- visit editor ---------------- */
+function renderVisitRead(v){const c=clientById(v.clientId);if(!c)return;
+  const ph=(v.photoIds||[]).map(p=>`<div class="thumb" data-act="pv-open" data-id="${p}"><img data-photo="${p}" alt=""></div>`).join("");
+  $("#ov-visit-in").innerHTML=`
+  <div class="ovbar"><button class="iconbtn" data-act="visit-read-close">‹</button>
+    <h2>Visit — ${esc(c.name)}</h2></div>
+  <div class="card visit">
+    <div class="vhead"><span class="vdate">${esc(fmtDate(v.date))}</span>
+      ${v.discountPct?`<span class="badge b-line">-${v.discountPct}%</span>`:""}
+      <span class="vprice">${esc(fmtMoney(v.price))}</span></div>
+    ${v.services?`<div class="vsvc">${esc(v.services)}</div>`:""}
+    ${v.notes?`<div class="vnote">${esc(v.notes)}</div>`:""}
+    ${ph?`<div class="thumbs">${ph}</div>`:""}
+  </div>
+  <div class="hint" style="text-align:center">🔒 Past visits are locked — they're your history and can't be changed.</div>`;
+  hydratePhotos($("#ov-visit-in"));
+  $("#ov-visit").classList.add("open");window.scrollTo(0,0);}
 function openVisit(clientId,visitId){const c=clientById(clientId);if(!c)return;
   let v=visitId?S.visits.find(x=>x.id===visitId):null;
+  if(v&&v.date<todayISO()){renderVisitRead(v);return;}
   const isNew=!v;
   v=v?{...v,photoIds:[...(v.photoIds||[])]}:{id:uid(),clientId,date:(S.fromAppt&&S.fromAppt.date)||todayISO(),
     services:(S.fromAppt&&S.fromAppt.service)||"",price:"",discountPct:c.discountOn?(c.discountPct||0):0,notes:"",photoIds:[]};
@@ -693,6 +713,13 @@ function shrinkImage(file){return new Promise((res,rej)=>{
   img.src=url;});}
 
 /* ---------------- appointment editor ---------------- */
+function renderNameSugg(q){const box=$("#a-sugg");if(!box)return;
+  const k=nameKey(q||"");
+  let list=S.clients.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  if(k)list=list.filter(c=>c.key.includes(k));
+  const exact=k&&S.clients.some(c=>c.key===k);
+  box.innerHTML=exact?"":list.slice(0,6).map(c=>
+    `<button class="suggitem" data-act="a-pick" data-id="${c.id}">${esc(c.name)}${c.phone?` <span>📞 ${esc(c.phone)}</span>`:""}</button>`).join("");}
 function openAppt(id,pre){
   const a=id?S.appts.find(x=>x.id===id):null;
   S.editAppt=a?{...a}:{id:"man|"+uid(),src:"manual",date:S.selDate,time:"",sort:9999,
@@ -706,7 +733,8 @@ function renderAppt(){const a=S.editAppt;
     <h2>${S.editApptIsNew?"New appointment":"Edit appointment"}</h2>
     ${S.editApptIsNew?"":`<button class="iconbtn" data-act="del-appt" title="Delete appointment">🗑</button>`}</div>
   <div class="card">
-    <label>Client name</label><input id="a-name" value="${esc(a.name)}">
+    <label>Client name</label><input id="a-name" autocomplete="off" placeholder="type, or pick below" value="${esc(a.name)}">
+    <div id="a-sugg" class="sugg"></div>
     <label>Date</label><input id="a-date" type="date" value="${esc(a.date)}">
     <div class="kv"><div><label>Time</label><input id="a-time" placeholder="e.g. 3:30 PM" value="${esc(a.time)}"></div>
     <div><label>Status</label><select id="a-status">
@@ -717,7 +745,8 @@ function renderAppt(){const a=S.editAppt;
     <label>Custom / special request</label><input id="a-svc-custom" placeholder="optional" value="${esc(sv.custom)}">
     <div class="btnrow" style="margin-bottom:0"><button class="btn wide" data-act="save-appt">Save appointment</button></div>
   </div>
-  ${a.src==="sheet"?`<div class="hint">This appointment came from the shared sheet. Your changes are kept — the next import won't overwrite them.</div>`:""}`;}
+  ${a.src==="sheet"?`<div class="hint">This appointment came from the shared sheet. Your changes are kept — the next import won't overwrite them.</div>`:""}`;
+  renderNameSugg(a.name);}
 
 /* ---------------- sheet sync ---------------- */
 function sheetIdOf(url){const m=String(url||"").match(/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);return m?m[1]:null;}
@@ -874,6 +903,7 @@ async function newClient(name,then){
 
 document.addEventListener("input",e=>{
   const t=e.target;
+  if(t&&t.id==="a-name"){renderNameSugg(t.value);return;}
   if(t&&t.dataset&&t.dataset.actInput==="search"){S.search=t.value;
     const main=t.closest("main");if(main){ /* re-render list only */ }
     render();const i=$("#search");if(i){i.focus();const l=i.value.length;i.setSelectionRange(l,l);}}});
@@ -961,8 +991,11 @@ document.addEventListener("click",async e=>{
       closeClient();toast("Client deleted");break;}
     case"add-visit":openVisit(S.openClientId);break;
     case"book-next":{const c=clientById(S.openClientId);if(c)openAppt(null,{name:c.name});break;}
+    case"a-pick":{const c=clientById(id);if(!c)break;
+      $("#a-name").value=c.name;renderNameSugg(c.name);break;}
     case"edit-visit":if(e.target.closest("[data-act='pv-open']"))break;openVisit(S.openClientId,id);break;
     case"cancel-visit":await closeVisit(true);break;
+    case"visit-read-close":$("#ov-visit").classList.remove("open");break;
     case"save-visit":{const ev=S.editVisit;if(!ev)break;const v=ev.v;
       const prevV=ev.isNew?null:S.visits.find(x=>x.id===v.id);
       v.date=$("#v-date").value||todayISO();
