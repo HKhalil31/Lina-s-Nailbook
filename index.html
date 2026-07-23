@@ -205,17 +205,17 @@ pre.paste-eg{background:var(--surface);border:1.5px solid var(--line);border-rad
 .wc-day.sel{background:var(--accent-soft);color:var(--accent)}
 .wc-gut div{font-size:9px;color:var(--muted);text-align:right;padding-right:4px;font-variant-numeric:tabular-nums}
 .wc-col{position:relative;border-radius:8px;background:var(--ground);cursor:pointer;
-  background-image:repeating-linear-gradient(to bottom,var(--line) 0,var(--line) 1px,transparent 1px,transparent 30px)}
-.wc-blk{position:absolute;left:4%;right:4%;height:27px;border-radius:6px;overflow:hidden;
-  background:var(--accent);color:var(--accent-ink);font-size:10px;font-weight:700;
-  padding:1px 4px;white-space:nowrap;text-overflow:ellipsis;cursor:pointer;line-height:1.2;
-  box-shadow:0 1px 2px rgba(0,0,0,.18);text-align:left}
+  background-image:repeating-linear-gradient(to bottom,var(--line) 0,var(--line) 1px,transparent 1px,transparent 40px)}
+.wc-blk{position:absolute;left:4%;right:4%;border-radius:6px;overflow:hidden;
+  background:var(--accent);color:var(--accent-ink);font-size:10.5px;font-weight:700;
+  padding:2px 4px;white-space:normal;cursor:pointer;line-height:1.2;
+  box-shadow:0 1px 2px rgba(0,0,0,.18);text-align:left;word-break:break-word}
 .wc-blk.unconf{background:var(--warn-soft);color:var(--warn);box-shadow:inset 0 0 0 1.5px var(--warn)}
 .wc-blk.cxl{background:var(--line);color:var(--muted);text-decoration:line-through;box-shadow:none}
 .wc-legend{display:flex;gap:12px;margin-top:10px;font-size:11px;color:var(--muted);flex-wrap:wrap}
 .wc-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
 .wc-scroll{overflow-x:auto}
-.wc-scroll .wc{min-width:540px}
+.wc-scroll .wc{min-width:640px}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
 .stat{background:var(--surface);border:1.5px solid var(--line);border-radius:12px;padding:12px 6px;text-align:center;box-shadow:var(--shadow)}
 .stat .n{font-size:17px;font-weight:800;font-variant-numeric:tabular-nums}
@@ -419,6 +419,9 @@ function waNumber(phone){let p=String(phone||"").replace(/\D/g,"");
 function waLink(phone,msg){const n=waNumber(phone);if(!n)return"";
   return`https://wa.me/${n}${msg?"?text="+encodeURIComponent(msg):""}`;}
 function fillTpl(t,a){return String(t||"").replace(/\{name\}/g,a.name||"").replace(/\{date\}/g,a.date||"").replace(/\{time\}/g,a.time||"");}
+function durLabel(m){m=+m||0;return m<60?`${m} min`:`${Math.floor(m/60)} h${m%60?` ${m%60}`:""}`;}
+function fmtMin(mins){const h=Math.floor(mins/60)%24,mi=Math.round(mins%60);
+  return`${h%12||12}:${pad(mi)} ${h>=12?"PM":"AM"}`;}
 
 /* ---------------- tab shell ---------------- */
 const TABS=[["today","📅","Today"],["clients","💅","Clients"],["care","💬","Follow-ups"],["money","💰","Earnings"],["settings","⚙️","Settings"]];
@@ -444,6 +447,7 @@ function apptCard(a){const c=clientByKey(a.key);
   else badges.push(`<span class="badge b-warn">not confirmed</span>`);
   if(isNew)badges.push(`<span class="badge b-new">new client</span>`);
   const extras=[];
+  if(a.dur)extras.push(`⏱ ${esc(durLabel(a.dur))}${a.sort<9998?` → ${esc(fmtMin(a.sort+(+a.dur||60)))}`:""}`);
   if(a.price!==""&&a.price!=null)extras.push(`💵 ${esc(fmtMoney(a.price))}`);
   if(c&&c.coffee)extras.push(`☕ ${esc(c.coffee)}`);
   if(c&&c.nextRequest)extras.push(`📌 ${esc(c.nextRequest)}`);
@@ -458,24 +462,27 @@ function apptCard(a){const c=clientByKey(a.key);
     ${a.status!=="done"&&a.status!=="cancelled"?`<button class="chev" data-act="close-appt-btn" data-id="${a.id}" aria-label="Close appointment" title="Close — log visit & payment" style="font-size:17px;padding:8px 2px;color:var(--good)">✓</button>`:""}
     <button class="chev" data-act="edit-appt" data-id="${a.id}" aria-label="Edit appointment" style="font-size:17px;padding:8px 2px">✎</button></div>`;}
 function weekGridHTML(start){
-  const START=9,END=21,H=30,t0=todayISO();
+  const START=9,END=21,H=40,t0=todayISO();
   let head="",cols="",gut="";
   for(let h=START;h<END;h++)gut+=`<div style="height:${H}px">${h%12||12}${h<12?"am":"pm"}</div>`;
   for(let i=0;i<7;i++){
     const d=addDaysISO(start,i),dt=new Date(d+"T12:00:00");
     head+=`<button class="wc-day ${d===t0?"today":""} ${d===S.selDate?"sel":""}" data-act="wc-day" data-d="${d}">${d===t0?"Today":DOW[dt.getDay()]}<br><b>${dt.getDate()}</b></button>`;
+    const gridH=(END-START)*H;
     const items=[];let prev=null;
     for(const a of apptsOn(d)){
       let m=a.sort>=9998?START*60:Math.min(Math.max(a.sort,START*60),END*60-30);
-      const it={a,m,lane:0,half:false};
-      if(prev&&m<prev.m+55){it.lane=prev.lane===0?1:0;it.half=true;prev.half=true;}
+      const it={a,m,dur:+a.dur||60,lane:0,half:false};
+      if(prev&&m<prev.m+prev.dur){it.lane=prev.lane===0?1:0;it.half=true;prev.half=true;}
       items.push(it);prev=it;}
-    const blks=items.map(({a,m,lane,half})=>{
+    const blks=items.map(({a,m,dur,lane,half})=>{
       const cls=a.status==="cancelled"?"cxl":a.confirmed?"":"unconf";
       const pos=half?(lane===0?"left:4%;right:52%":"left:52%;right:4%"):"left:4%;right:4%";
-      const tip=`${a.time||""} ${a.name}${a.service?" — "+a.service:""}`;
+      const top=(m/60-START)*H+1;
+      const bh=Math.max(22,Math.min(dur/60*H-3,gridH-top-2));
+      const tip=`${a.time||""}${a.dur?` (${durLabel(a.dur)})`:""} ${a.name}${a.service?" — "+a.service:""}`;
       return`<button class="wc-blk ${cls}" data-act="open-appt" data-id="${esc(a.id)}"
-        style="top:${(m/60-START)*H+1}px;${pos}" title="${esc(tip)}">${esc(a.name.split(" ")[0])}</button>`;}).join("");
+        style="top:${top}px;height:${bh}px;${pos}" title="${esc(tip)}">${esc(a.name)}</button>`;}).join("");
     cols+=`<div class="wc-col" data-act="wc-day" data-d="${d}" style="height:${(END-START)*H}px">${blks}</div>`;}
   return`<div class="wc-head"><div></div>${head}</div>
     <div class="wc-body"><div class="wc-gut">${gut}</div>${cols}</div>`;}
@@ -797,7 +804,7 @@ function renderNameSugg(q){const box=$("#a-sugg");if(!box)return;
 function openAppt(id,pre){
   const a=id?S.appts.find(x=>x.id===id):null;
   S.editAppt=a?{...a}:{id:"man|"+uid(),src:"manual",date:S.selDate,time:"",sort:9999,
-    name:(pre&&pre.name)||"",key:"",service:"",price:"",confirmed:true,status:""};
+    name:(pre&&pre.name)||"",key:"",service:"",price:"",dur:60,confirmed:true,status:""};
   S.editApptIsNew=!a;
   renderAppt();$("#ov-appt").classList.add("open");window.scrollTo(0,0);}
 function renderAppt(){const a=S.editAppt;
@@ -817,8 +824,10 @@ function renderAppt(){const a=S.editAppt;
       <option value="cancelled" ${a.status==="cancelled"?"selected":""}>Cancelled</option></select></div></div>
     <label>Service (from your menu)</label><select id="a-svc">${serviceOptionsHTML(sv.sel)}</select>
     <label>Custom / special request</label><input id="a-svc-custom" placeholder="optional" value="${esc(sv.custom)}">
-    <label>Price ${SET.currency?`(${esc(SET.currency)})`:""} <span style="font-weight:400">(optional — you can also set it when closing)</span></label>
-    <input id="a-price" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(a.price??"")}">
+    <div class="kv"><div><label>Approx. duration ⏱</label><select id="a-dur">
+      ${[30,45,60,75,90,105,120,150,180,210,240].map(m=>`<option value="${m}" ${(+a.dur||60)===m?"selected":""}>${durLabel(m)}</option>`).join("")}</select></div>
+    <div><label>Price ${SET.currency?`(${esc(SET.currency)})`:""}</label>
+    <input id="a-price" type="number" inputmode="decimal" step="0.01" min="0" placeholder="optional" value="${esc(a.price??"")}"></div></div>
     <div class="btnrow" style="margin-bottom:0"><button class="btn wide" data-act="save-appt">Save appointment</button></div>
     ${!S.editApptIsNew&&a.status!=="done"&&a.status!=="cancelled"?`<div class="btnrow" style="margin-bottom:0"><button class="btn sec wide" data-act="close-appt-btn" data-id="${esc(a.id)}" style="color:var(--good)">✓ Close appointment — log her visit & payment</button></div>`:""}
   </div>
@@ -1035,6 +1044,7 @@ document.addEventListener("click",async e=>{
       const upd={...a,src:"manual",name,key:nameKey(name),date:$("#a-date").value||todayISO(),
         time:t.disp,sort:t.sort,service:joinService($("#a-svc").value,$("#a-svc-custom").value),
         price:$("#a-price").value===""?"":+$("#a-price").value,
+        dur:+$("#a-dur").value||60,
         confirmed:st==="conf",status:st==="cancelled"?"cancelled":(a.status==="done"?"done":"")};
       const prevA=S.editApptIsNew?null:S.appts.find(x=>x.id===upd.id);
       await dbPut("appts",upd);
