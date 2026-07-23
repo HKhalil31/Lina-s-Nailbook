@@ -305,13 +305,13 @@ function parseDSV(text){ /* CSV or TSV, quote-aware */
 const DEF_SET={sheetUrl:"",sheetTab:"Lina Schedule",artist:"",dayFirst:true,currency:"USD",waCC:"961",confirmDays:1,
   msgConfirm:"Hi {name} 💅 A friendly reminder of your appointment on {date} at {time}. See you soon!",
   msgComeback:"Hi {name} 💅 It's been a while since your last visit — ready for a refresh? Let me know when you'd like to come in!",
-  servicesTxt:"Manicure:\nRussian Manicure = 20\nRussian Manicure + Gel Polish = 30\nRussian Manicure + French = 35\nGel Extensions – Full Set = 45\nGel Extensions – Refill = 35\nAcrylic – Full Set = 45\nAcrylic – Refill = 35\nGel Polish Removal = 8\nNail Art / Design = 10\nNail Repair = 5\nClassic Manicure = 12\nSpa Manicure = 18\nPedicure:\nRussian Pedicure = 25\nRussian Pedicure + Gel Polish = 35\nRussian Pedicure + French = 40\nClassic Pedicure = 15\nSpa Pedicure = 22\nCallus Treatment = 12\nCombo:\nRussian Mani + Pedi = 40",
+  servicesTxt:"Manicure:\nRussian Manicure\nRussian Manicure + Gel Polish\nRussian Manicure + French\nGel Extensions – Full Set\nGel Extensions – Refill\nAcrylic – Full Set\nAcrylic – Refill\nGel Polish Removal\nNail Art / Design\nNail Repair\nClassic Manicure\nSpa Manicure\nPedicure:\nRussian Pedicure\nRussian Pedicure + Gel Polish\nRussian Pedicure + French\nClassic Pedicure\nSpa Pedicure\nCallus Treatment\nCombo:\nRussian Mani + Pedi",
   mapping:null,lastSync:"",hiddenAppts:[]};
 let SET={...DEF_SET};
 try{Object.assign(SET,JSON.parse(localStorage.getItem("nailbook.settings")||"{}"));}catch(e){}
 if(SET.currency==="JD")SET.currency="USD";
 if(SET.waCC==="962")SET.waCC="961";
-if(SET.servicesTxt&&!SET.servicesTxt.includes("=")&&SET.servicesTxt.startsWith("Manicure:"))SET.servicesTxt=DEF_SET.servicesTxt;
+if(SET.servicesTxt&&SET.servicesTxt.includes("="))SET.servicesTxt=SET.servicesTxt.replace(/\s*=\s*[\d.,]+\s*$/gm,"");
 if(SET.confirmDays===3)SET.confirmDays=1;
 function saveSet(){localStorage.setItem("nailbook.settings",JSON.stringify(SET));}
 function serviceItems(){return(SET.servicesTxt||"").split("\n").map(s=>s.trim()).filter(Boolean).map(l=>{
@@ -324,7 +324,7 @@ function servicePrice(name){const it=serviceItems().find(i=>i.name===name);
 function serviceOptionsHTML(sel){let h=`<option value="">— choose from menu —</option>`,open=false;
   for(const it of serviceItems()){
     if(it.group!==undefined){if(open)h+="</optgroup>";h+=`<optgroup label="${esc(it.group)}">`;open=true;}
-    else h+=`<option value="${esc(it.name)}" ${it.name===sel?"selected":""}>${esc(it.name)}${it.price!=null?` — ${esc(fmtMoney(it.price))}`:""}</option>`;}
+    else h+=`<option value="${esc(it.name)}" ${it.name===sel?"selected":""}>${esc(it.name)}</option>`;}
   if(open)h+="</optgroup>";return h;}
 function splitService(s){s=String(s||"").trim();if(!s)return{sel:"",custom:""};
   const opts=serviceNames();
@@ -352,7 +352,7 @@ async function dbGet(st,k){const d=await db();return new Promise((res,rej)=>{con
 
 /* ---------------- state ---------------- */
 const S={view:"today",selDate:todayISO(),clients:[],visits:[],appts:[],search:"",log:[],
-  mFrom:addDaysISO(todayISO(),-6),mTo:todayISO(),mPreset:"7d",
+  mFrom:addDaysISO(todayISO(),-6),mTo:todayISO(),mPreset:"7d",closingApptId:null,
   openClientId:null,fromAppt:null,editVisit:null,importRows:null,photoURLs:new Map()};
 async function loadAll(){[S.clients,S.visits,S.appts,S.log]=await Promise.all([dbAll("clients"),dbAll("visits"),dbAll("appts"),dbAll("log")]);
   S.log.sort((a,b)=>b.ts-a.ts);S.log=S.log.slice(0,3);}
@@ -382,7 +382,10 @@ async function doUndo(id){
         for(const p of u.photos||[])await dbPut("photos",p);break;}
       case"visit-delete":{for(const p of u.photoIds||[])await dbDel("photos",p);
         await dbDel("visits",u.id);
-        if(u.apptId)await dbDel("appts",u.apptId);break;}
+        if(u.apptId)await dbDel("appts",u.apptId);
+        if(u.closeAppt){const ap=await dbGet("appts",u.closeAppt.id);
+          if(ap){ap.status=u.closeAppt.prevStatus;ap.src=u.closeAppt.prevSrc;await dbPut("appts",ap);}}
+        break;}
       case"appt-restore":{await dbPut("appts",u.appt);
         if(u.untomb){SET.hiddenAppts=(SET.hiddenAppts||[]).filter(h=>h!==u.untomb);saveSet();}break;}
       case"appt-delete":await dbDel("appts",u.id);break;
@@ -435,11 +438,13 @@ function render(){renderTabs();
 function apptCard(a){const c=clientByKey(a.key);
   const isNew=!c;const lv=c?lastVisit(c.id):null;
   const badges=[];
-  if(a.status==="cancelled")badges.push(`<span class="badge b-bad">cancelled</span>`);
+  if(a.status==="done")badges.push(`<span class="badge b-ok">closed ✓</span>`);
+  else if(a.status==="cancelled")badges.push(`<span class="badge b-bad">cancelled</span>`);
   else if(a.confirmed)badges.push(`<span class="badge b-ok">confirmed ✓</span>`);
   else badges.push(`<span class="badge b-warn">not confirmed</span>`);
   if(isNew)badges.push(`<span class="badge b-new">new client</span>`);
   const extras=[];
+  if(a.price!==""&&a.price!=null)extras.push(`💵 ${esc(fmtMoney(a.price))}`);
   if(c&&c.coffee)extras.push(`☕ ${esc(c.coffee)}`);
   if(c&&c.nextRequest)extras.push(`📌 ${esc(c.nextRequest)}`);
   if(c&&c.discountOn)extras.push(`🏷️ ${c.discountPct||0}% off`);
@@ -450,6 +455,7 @@ function apptCard(a){const c=clientByKey(a.key);
     ${a.service?`<div class="svc">${esc(a.service)}</div>`:""}
     ${extras.length?`<div class="extra">${extras.map(x=>`<span>${x}</span>`).join("")}</div>`:""}</div>
     ${c&&c.phone?`<a class="wa" data-act="wa" href="${esc(waLink(c.phone,""))}" target="_blank" rel="noopener" aria-label="WhatsApp ${esc(c.name)}">💬</a>`:""}
+    ${a.status!=="done"&&a.status!=="cancelled"?`<button class="chev" data-act="close-appt-btn" data-id="${a.id}" aria-label="Close appointment" title="Close — log visit & payment" style="font-size:17px;padding:8px 2px;color:var(--good)">✓</button>`:""}
     <button class="chev" data-act="edit-appt" data-id="${a.id}" aria-label="Edit appointment" style="font-size:17px;padding:8px 2px">✎</button></div>`;}
 function weekGridHTML(start){
   const START=9,END=21,H=30,t0=todayISO();
@@ -630,9 +636,8 @@ function viewSettings(){
     <label>“Come back” message</label>
     <textarea id="set-m2">${esc(SET.msgComeback)}</textarea>
     <div class="hint">{name}, {date} and {time} are filled in automatically.</div>
-    <label>Service menu & prices <span style="font-weight:400">(one per line: Service = price · a line ending with “:” starts a group)</span></label>
+    <label>Service menu <span style="font-weight:400">(one per line — a line ending with “:” starts a group)</span></label>
     <textarea id="set-services" style="min-height:150px">${esc(SET.servicesTxt)}</textarea>
-    <div class="hint">The price fills in automatically when you pick the service on a visit. Leave a service without “= price” if it varies.</div>
     <div class="btnrow" style="margin-bottom:0"><button class="btn" data-act="save-settings">Save settings</button></div>
   </div>
   <div class="sect">Backup</div>
@@ -725,7 +730,7 @@ function openVisit(clientId,visitId){const c=clientById(clientId);if(!c)return;
   const isNew=!v;
   v=v?{...v,photoIds:[...(v.photoIds||[])]}:{id:uid(),clientId,date:(S.fromAppt&&S.fromAppt.date)||todayISO(),
     services:(S.fromAppt&&S.fromAppt.service)||"",price:"",discountPct:c.discountOn?(c.discountPct||0):0,notes:"",photoIds:[]};
-  if(!visitId&&v.services&&v.price===""){const sp=servicePrice(splitService(v.services).sel);if(sp!=null)v.price=sp;}
+  if(!visitId&&v.price===""&&S.fromAppt&&S.fromAppt.price!==""&&S.fromAppt.price!=null)v.price=S.fromAppt.price;
   S.editVisit={v,isNew,newPhotoIds:[]};
   renderVisit();$("#ov-visit").classList.add("open");window.scrollTo(0,0);}
 function renderVisit(){const{v,isNew}=S.editVisit;const c=clientById(v.clientId);
@@ -768,7 +773,9 @@ function updFinal(){const p=+($("#v-price")?.value||0),d=+($("#v-disc")?.value||
 async function closeVisit(discard){const ev=S.editVisit;if(!ev)return;
   if(discard)for(const id of ev.newPhotoIds){await dbDel("photos",id);const u=S.photoURLs.get(id);if(u){URL.revokeObjectURL(u);S.photoURLs.delete(id);}}
   S.editVisit=null;$("#ov-visit").classList.remove("open");
-  if(S.openClientId)renderClient();}
+  if(discard)S.closingApptId=null;
+  if(S.openClientId)renderClient();
+  else S.fromAppt=null;}
 function shrinkImage(file){return new Promise((res,rej)=>{
   const url=URL.createObjectURL(file);const img=new Image();
   img.onload=()=>{const MAX=1280;let{width:w,height:h}=img;
@@ -790,7 +797,7 @@ function renderNameSugg(q){const box=$("#a-sugg");if(!box)return;
 function openAppt(id,pre){
   const a=id?S.appts.find(x=>x.id===id):null;
   S.editAppt=a?{...a}:{id:"man|"+uid(),src:"manual",date:S.selDate,time:"",sort:9999,
-    name:(pre&&pre.name)||"",key:"",service:"",confirmed:true,status:""};
+    name:(pre&&pre.name)||"",key:"",service:"",price:"",confirmed:true,status:""};
   S.editApptIsNew=!a;
   renderAppt();$("#ov-appt").classList.add("open");window.scrollTo(0,0);}
 function renderAppt(){const a=S.editAppt;
@@ -810,7 +817,10 @@ function renderAppt(){const a=S.editAppt;
       <option value="cancelled" ${a.status==="cancelled"?"selected":""}>Cancelled</option></select></div></div>
     <label>Service (from your menu)</label><select id="a-svc">${serviceOptionsHTML(sv.sel)}</select>
     <label>Custom / special request</label><input id="a-svc-custom" placeholder="optional" value="${esc(sv.custom)}">
+    <label>Price ${SET.currency?`(${esc(SET.currency)})`:""} <span style="font-weight:400">(optional — you can also set it when closing)</span></label>
+    <input id="a-price" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(a.price??"")}">
     <div class="btnrow" style="margin-bottom:0"><button class="btn wide" data-act="save-appt">Save appointment</button></div>
+    ${!S.editApptIsNew&&a.status!=="done"&&a.status!=="cancelled"?`<div class="btnrow" style="margin-bottom:0"><button class="btn sec wide" data-act="close-appt-btn" data-id="${esc(a.id)}" style="color:var(--good)">✓ Close appointment — log her visit & payment</button></div>`:""}
   </div>
   ${a.src==="sheet"?`<div class="hint">This appointment came from the shared sheet. Your changes are kept — the next import won't overwrite them.</div>`:""}`;
   renderNameSugg(a.name);}
@@ -1012,13 +1022,20 @@ document.addEventListener("click",async e=>{
     case"remap":if(S.importRows)openMap();else{toast("Run an import first — mapping opens automatically");}break;
     case"walkin":openAppt(null);break;
     case"edit-appt":openAppt(id);break;
+    case"close-appt-btn":{const a=S.appts.find(x=>x.id===id);if(!a)break;
+      $("#ov-appt").classList.remove("open");S.editAppt=null;
+      const go=cl=>{S.fromAppt=a;S.closingApptId=a.id;openVisit(cl.id);};
+      const c=clientByKey(a.key);
+      if(c)go(c);else await newClient(a.name,nc=>{render();go(nc);});
+      break;}
     case"close-appt":S.editAppt=null;$("#ov-appt").classList.remove("open");break;
     case"save-appt":{const a=S.editAppt;if(!a)break;
       const name=$("#a-name").value.trim();if(!name){toast("Client name is required");break;}
       const t=parseTime($("#a-time").value);const st=$("#a-status").value;
       const upd={...a,src:"manual",name,key:nameKey(name),date:$("#a-date").value||todayISO(),
         time:t.disp,sort:t.sort,service:joinService($("#a-svc").value,$("#a-svc-custom").value),
-        confirmed:st==="conf",status:st==="cancelled"?"cancelled":""};
+        price:$("#a-price").value===""?"":+$("#a-price").value,
+        confirmed:st==="conf",status:st==="cancelled"?"cancelled":(a.status==="done"?"done":"")};
       const prevA=S.editApptIsNew?null:S.appts.find(x=>x.id===upd.id);
       await dbPut("appts",upd);
       const i=S.appts.findIndex(x=>x.id===upd.id);if(i>=0)S.appts[i]=upd;else S.appts.push(upd);
@@ -1092,10 +1109,16 @@ document.addEventListener("click",async e=>{
           const na={id:"man|"+uid(),src:"manual",date:bd,time:bt.disp,sort:bt.sort,
             name:c.name,key:c.key,service:c.nextRequest||"",confirmed:true,status:""};
           await dbPut("appts",na);S.appts.push(na);booked=true;v._bookedApptId=na.id;}}
+      let closeInfo=null;
+      if(S.closingApptId){const ap=S.appts.find(x=>x.id===S.closingApptId);
+        if(ap&&ap.status!=="done")closeInfo={id:ap.id,prevStatus:ap.status,prevSrc:ap.src};}
       if(ev.isNew)await logAdd(`Added visit — ${c?c.name:""} (${fmtDate(v.date)})`,
-        {kind:"visit-delete",id:v.id,photoIds:[...(v.photoIds||[])],apptId:v._bookedApptId});
+        {kind:"visit-delete",id:v.id,photoIds:[...(v.photoIds||[])],apptId:v._bookedApptId,closeAppt:closeInfo});
       else if(prevV)await logAdd(`Edited visit — ${c?c.name:""} (${fmtDate(v.date)})`,
         {kind:"visit-restore",visit:{...prevV,photoIds:[...(prevV.photoIds||[])]}});
+      if(closeInfo){const ap=S.appts.find(x=>x.id===closeInfo.id);
+        ap.status="done";ap.src="manual";await dbPut("appts",ap);}
+      S.closingApptId=null;
       delete v._bookedApptId;
       ev.newPhotoIds=[];await closeVisit(false);render();
       toast(booked?`Visit saved + next appointment booked ✓`:"Visit saved ✓");break;}
@@ -1148,8 +1171,6 @@ document.addEventListener("click",async e=>{
 
 document.addEventListener("change",async e=>{
   const t=e.target;
-  if(t.id==="v-svc-sel"){const p=servicePrice(t.value);
-    if(p!=null&&$("#v-price")){$("#v-price").value=p;updFinal();}}
   if(t.id==="m-from"||t.id==="m-to"){
     if(t.id==="m-from")S.mFrom=t.value||S.mFrom;else S.mTo=t.value||S.mTo;
     S.mPreset="";render();}
