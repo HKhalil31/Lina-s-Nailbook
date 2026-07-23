@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>NailBook — Client Book</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#93355C">
@@ -178,6 +179,35 @@ table.map td:first-child{font-weight:600;white-space:nowrap;width:1%}
 #photoview img{max-width:96vw;max-height:88vh;border-radius:8px}
 #photoview .x{position:absolute;top:calc(14px + env(safe-area-inset-top));right:16px;color:#fff;font-size:26px;width:44px;height:44px}
 pre.paste-eg{background:var(--surface);border:1.5px solid var(--line);border-radius:10px;padding:10px;font-size:12px;overflow-x:auto;color:var(--muted)}
+/* week calendar */
+.weekcal-panel{display:none}
+@media(min-width:960px){
+  #app.wide{max-width:1010px}
+  #app.wide .today-wrap{display:grid;grid-template-columns:minmax(0,1fr) 450px;gap:22px;align-items:start}
+  .weekcal-panel{display:block;position:sticky;top:70px}
+  .cal-btn{display:none!important}
+}
+.wc{background:var(--surface);border:1.5px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:12px}
+.wc-title{font-size:13px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin:0 0 8px 2px}
+.wc-head,.wc-body{display:grid;grid-template-columns:30px repeat(7,1fr);gap:3px}
+.wc-head{margin-bottom:4px}
+.wc-day{text-align:center;font-size:10px;font-weight:700;color:var(--muted);border-radius:8px;padding:3px 0;line-height:1.25}
+.wc-day b{font-size:13px;font-variant-numeric:tabular-nums}
+.wc-day.today{color:var(--accent)}
+.wc-day.sel{background:var(--accent-soft);color:var(--accent)}
+.wc-gut div{font-size:9px;color:var(--muted);text-align:right;padding-right:4px;font-variant-numeric:tabular-nums}
+.wc-col{position:relative;border-radius:8px;background:var(--ground);cursor:pointer;
+  background-image:repeating-linear-gradient(to bottom,var(--line) 0,var(--line) 1px,transparent 1px,transparent 30px)}
+.wc-blk{position:absolute;left:4%;right:4%;height:27px;border-radius:6px;overflow:hidden;
+  background:var(--accent);color:var(--accent-ink);font-size:10px;font-weight:700;
+  padding:1px 4px;white-space:nowrap;text-overflow:ellipsis;cursor:pointer;line-height:1.2;
+  box-shadow:0 1px 2px rgba(0,0,0,.18);text-align:left}
+.wc-blk.unconf{background:var(--warn-soft);color:var(--warn);box-shadow:inset 0 0 0 1.5px var(--warn)}
+.wc-blk.cxl{background:var(--line);color:var(--muted);text-decoration:line-through;box-shadow:none}
+.wc-legend{display:flex;gap:12px;margin-top:10px;font-size:11px;color:var(--muted);flex-wrap:wrap}
+.wc-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+.wc-scroll{overflow-x:auto}
+.wc-scroll .wc{min-width:540px}
 @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
 </style>
 
@@ -188,6 +218,7 @@ pre.paste-eg{background:var(--surface);border:1.5px solid var(--line);border-rad
 
 <div class="ov" id="ov-client"><div class="inner" id="ov-client-in"></div></div>
 <div class="ov" id="ov-visit"><div class="inner" id="ov-visit-in"></div></div>
+<div class="ov" id="ov-cal"><div class="inner" id="ov-cal-in"></div></div>
 <div class="ov" id="ov-appt"><div class="inner" id="ov-appt-in"></div></div>
 <div class="ov" id="ov-import"><div class="inner" id="ov-import-in"></div></div>
 <div class="ov" id="ov-map"><div class="inner" id="ov-map-in"></div></div>
@@ -300,6 +331,7 @@ const TABS=[["today","📅","Today"],["clients","💅","Clients"],["care","💬"
 function renderTabs(){$("#tabs").innerHTML=TABS.map(([id,ico,lab])=>
   `<button class="tab ${S.view===id?"on":""}" data-act="tab" data-id="${id}"><span class="ico">${ico}</span>${lab}</button>`).join("");}
 function render(){renderTabs();
+  $("#app").classList.toggle("wide",S.view==="today");
   const v=$("#views");
   if(S.view==="today")v.innerHTML=viewToday();
   else if(S.view==="clients")v.innerHTML=viewClients();
@@ -326,6 +358,32 @@ function apptCard(a){const c=clientByKey(a.key);
     ${a.service?`<div class="svc">${esc(a.service)}</div>`:""}
     ${extras.length?`<div class="extra">${extras.map(x=>`<span>${x}</span>`).join("")}</div>`:""}</div>
     <button class="chev" data-act="edit-appt" data-id="${a.id}" aria-label="Edit appointment" style="font-size:17px;padding:8px 2px">✎</button></div>`;}
+function weekCalHTML(){
+  const START=9,END=21,H=30,t0=todayISO();
+  let head="",cols="",gut="";
+  for(let h=START;h<END;h++)gut+=`<div style="height:${H}px">${h%12||12}${h<12?"am":"pm"}</div>`;
+  for(let i=0;i<7;i++){
+    const d=addDaysISO(t0,i),dt=new Date(d+"T12:00:00");
+    head+=`<button class="wc-day ${d===t0?"today":""} ${d===S.selDate?"sel":""}" data-act="wc-day" data-d="${d}">${i===0?"Today":DOW[dt.getDay()]}<br><b>${dt.getDate()}</b></button>`;
+    const items=[];let prev=null;
+    for(const a of apptsOn(d)){
+      let m=a.sort>=9998?START*60:Math.min(Math.max(a.sort,START*60),END*60-30);
+      const it={a,m,lane:0,half:false};
+      if(prev&&m<prev.m+55){it.lane=prev.lane===0?1:0;it.half=true;prev.half=true;}
+      items.push(it);prev=it;}
+    const blks=items.map(({a,m,lane,half})=>{
+      const cls=a.status==="cancelled"?"cxl":a.confirmed?"":"unconf";
+      const pos=half?(lane===0?"left:4%;right:52%":"left:52%;right:4%"):"left:4%;right:4%";
+      const tip=`${a.time||""} ${a.name}${a.service?" — "+a.service:""}`;
+      return`<button class="wc-blk ${cls}" data-act="open-appt" data-id="${esc(a.id)}"
+        style="top:${(m/60-START)*H+1}px;${pos}" title="${esc(tip)}">${esc(a.name.split(" ")[0])}</button>`;}).join("");
+    cols+=`<div class="wc-col" data-act="wc-day" data-d="${d}" style="height:${(END-START)*H}px">${blks}</div>`;}
+  return`<div class="wc"><div class="wc-title">Next 7 days</div>
+    <div class="wc-head"><div></div>${head}</div>
+    <div class="wc-body"><div class="wc-gut">${gut}</div>${cols}</div>
+    <div class="wc-legend"><span><i style="background:var(--accent)"></i>confirmed</span>
+    <span><i style="background:var(--warn-soft);box-shadow:inset 0 0 0 1.5px var(--warn)"></i>not confirmed</span>
+    <span><i style="background:var(--line)"></i>cancelled</span></div></div>`;}
 function viewToday(){
   const days=[];for(let i=0;i<14;i++){const d=addDaysISO(todayISO(),i);
     const dt=new Date(d+"T12:00:00");
@@ -333,13 +391,16 @@ function viewToday(){
       <div class="dw">${i===0?"Today":DOW[dt.getDay()]}</div><div class="dn">${dt.getDate()}</div><div class="dot"></div></button>`);}
   const list=apptsOn(S.selDate);
   return`<div class="topbar"><h1>${esc(fmtDate(S.selDate))}</h1>
+    <button class="iconbtn cal-btn" data-act="cal-open" title="Week calendar">🗓</button>
     <button class="iconbtn" data-act="walkin" title="Add walk-in">＋</button>
     <button class="iconbtn" data-act="sync" title="Sync schedule">⟳</button></div>
-  <main><div class="days">${days.join("")}</div>
+  <main><div class="today-wrap"><div>
+  <div class="days">${days.join("")}</div>
   ${list.length?list.map(apptCard).join(""):
     `<div class="empty"><div class="big">🗓️</div>No appointments on this day.<br>
      <div class="hint">Tap ⟳ to pull the schedule from your shared sheet,<br>or ＋ to add a walk-in.</div></div>`}
-  ${SET.lastSync?`<div class="hint" style="text-align:center">Schedule updated ${esc(SET.lastSync)}</div>`:""}</main>`;}
+  ${SET.lastSync?`<div class="hint" style="text-align:center">Schedule updated ${esc(SET.lastSync)}</div>`:""}
+  </div><aside class="weekcal-panel">${weekCalHTML()}</aside></div></main>`;}
 
 /* ---------------- Clients ---------------- */
 function clientRow(c){const lv=lastVisit(c.id);const n=visitsOf(c.id).length;
@@ -734,6 +795,10 @@ document.addEventListener("click",async e=>{
   switch(act){
     case"tab":S.view=b.dataset.id;render();window.scrollTo(0,0);break;
     case"day":S.selDate=b.dataset.d;render();break;
+    case"wc-day":S.selDate=b.dataset.d;$("#ov-cal").classList.remove("open");render();break;
+    case"cal-open":$("#ov-cal-in").innerHTML=`<div class="ovbar"><button class="iconbtn" data-act="cal-close">‹</button><h2>Week at a glance</h2></div><div class="wc-scroll">${weekCalHTML()}</div>`;
+      $("#ov-cal").classList.add("open");window.scrollTo(0,0);break;
+    case"cal-close":$("#ov-cal").classList.remove("open");break;
     case"sync":case"sync-fetch":{
       if($("#set-sheet")){SET.sheetUrl=$("#set-sheet").value.trim();
         SET.sheetTab=$("#set-tab").value.trim();SET.artist=$("#set-artist").value.trim();saveSet();}
@@ -771,6 +836,8 @@ document.addEventListener("click",async e=>{
       await dbDel("appts",a.id);S.appts=S.appts.filter(x=>x.id!==a.id);
       S.editAppt=null;$("#ov-appt").classList.remove("open");render();toast("Appointment deleted");break;}
     case"open-appt":{const a=S.appts.find(x=>x.id===id);if(!a)break;
+      $("#ov-cal").classList.remove("open");
+      if(a.date!==S.selDate){S.selDate=a.date;render();}
       const c=clientByKey(a.key);
       if(c)openClient(c.id,a);
       else await newClient(a.name,nc=>{render();openClient(nc.id,a);});
