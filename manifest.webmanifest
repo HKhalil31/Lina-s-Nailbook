@@ -1,0 +1,13 @@
+{
+  "name": "NailBook — Client Book",
+  "short_name": "NailBook",
+  "description": "Private client book for the nail salon",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#FBF8F7",
+  "theme_color": "#93355C",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

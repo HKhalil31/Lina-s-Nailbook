@@ -1,0 +1,860 @@
+<title>NailBook — Client Book</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#93355C">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="NailBook">
+<style>
+:root{
+  --ground:#FBF8F7; --surface:#FFFFFF; --ink:#2A2126; --muted:#7C6B75;
+  --accent:#93355C; --accent-ink:#FFFFFF; --accent-soft:#F5E3EC; --line:#EADCE2;
+  --good:#2F7A4D; --good-soft:#E2F0E7; --warn:#A9701F; --warn-soft:#F6ECDA; --bad:#B23F38; --bad-soft:#F6E3E1;
+  --shadow:0 1px 3px rgba(42,33,38,.08),0 4px 14px rgba(42,33,38,.06);
+  --r:14px;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --ground:#191216; --surface:#241A20; --ink:#F2E8ED; --muted:#A78F9C;
+    --accent:#D687AC; --accent-ink:#2A1220; --accent-soft:#3A2530; --line:#3A2B33;
+    --good:#7FC79A; --good-soft:#22352A; --warn:#DBA95C; --warn-soft:#3A2F1D; --bad:#E08A83; --bad-soft:#402523;
+    --shadow:0 1px 3px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="light"]{
+  --ground:#FBF8F7; --surface:#FFFFFF; --ink:#2A2126; --muted:#7C6B75;
+  --accent:#93355C; --accent-ink:#FFFFFF; --accent-soft:#F5E3EC; --line:#EADCE2;
+  --good:#2F7A4D; --good-soft:#E2F0E7; --warn:#A9701F; --warn-soft:#F6ECDA; --bad:#B23F38; --bad-soft:#F6E3E1;
+  --shadow:0 1px 3px rgba(42,33,38,.08),0 4px 14px rgba(42,33,38,.06);
+}
+:root[data-theme="dark"]{
+  --ground:#191216; --surface:#241A20; --ink:#F2E8ED; --muted:#A78F9C;
+  --accent:#D687AC; --accent-ink:#2A1220; --accent-soft:#3A2530; --line:#3A2B33;
+  --good:#7FC79A; --good-soft:#22352A; --warn:#DBA95C; --warn-soft:#3A2F1D; --bad:#E08A83; --bad-soft:#402523;
+  --shadow:0 1px 3px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.3);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--ground); color:var(--ink);
+  font:16px/1.45 ui-rounded,"SF Pro Rounded",system-ui,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased; overscroll-behavior-y:none;
+}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+input,select,textarea{
+  font:inherit;color:var(--ink);background:var(--surface);
+  border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;
+}
+input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+textarea{resize:vertical;min-height:64px}
+label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:14px 0 5px;letter-spacing:.02em}
+#app{max-width:520px;margin:0 auto;min-height:100dvh;display:flex;flex-direction:column}
+main{flex:1;padding:0 16px 90px}
+.topbar{
+  position:sticky;top:0;z-index:5;background:var(--ground);
+  padding:calc(14px + env(safe-area-inset-top)) 16px 10px;
+  display:flex;align-items:center;gap:10px;
+}
+.topbar h1{font-size:24px;font-weight:800;letter-spacing:-.02em;margin:0;flex:1;text-wrap:balance}
+.iconbtn{
+  width:40px;height:40px;border-radius:12px;background:var(--surface);border:1.5px solid var(--line);
+  display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex:none;box-shadow:var(--shadow);
+}
+.tabbar{
+  position:fixed;bottom:0;left:0;right:0;z-index:6;
+  background:var(--surface);border-top:1.5px solid var(--line);
+  padding:6px 8px calc(8px + env(safe-area-inset-bottom));
+}
+.tabbar .row{max-width:520px;margin:0 auto;display:flex}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0;border-radius:12px;color:var(--muted);font-size:11px;font-weight:600}
+.tab .ico{font-size:20px;line-height:1}
+.tab.on{color:var(--accent);background:var(--accent-soft)}
+.card{background:var(--surface);border:1.5px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:14px;margin-bottom:10px}
+.card.tap{cursor:pointer}
+.card.tap:active{transform:scale(.99)}
+.appt{display:flex;gap:12px;align-items:flex-start}
+.appt .time{font-variant-numeric:tabular-nums;font-weight:800;font-size:15px;min-width:62px;padding-top:1px}
+.appt .who{flex:1;min-width:0}
+.appt .name{font-weight:700;font-size:16px}
+.appt .svc{color:var(--muted);font-size:14px;margin-top:1px}
+.appt .extra{font-size:13px;color:var(--muted);margin-top:6px;display:flex;flex-wrap:wrap;gap:4px 10px}
+.appt.cancelled .name,.appt.cancelled .svc{text-decoration:line-through;opacity:.55}
+.chev{color:var(--muted);align-self:center}
+.badge{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.03em;border-radius:999px;padding:2px 8px;vertical-align:2px}
+.b-new{background:var(--accent-soft);color:var(--accent)}
+.b-ok{background:var(--good-soft);color:var(--good)}
+.b-warn{background:var(--warn-soft);color:var(--warn)}
+.b-bad{background:var(--bad-soft);color:var(--bad)}
+.b-line{border:1.5px solid var(--line);color:var(--muted)}
+.days{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 12px;scrollbar-width:none}
+.days::-webkit-scrollbar{display:none}
+.day{
+  flex:none;min-width:58px;text-align:center;padding:8px 10px;border-radius:12px;
+  background:var(--surface);border:1.5px solid var(--line);
+}
+.day .dw{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.05em;text-transform:uppercase}
+.day .dn{font-size:17px;font-weight:800;font-variant-numeric:tabular-nums}
+.day .dot{width:5px;height:5px;border-radius:50%;background:var(--accent);margin:3px auto 0;visibility:hidden}
+.day.has .dot{visibility:visible}
+.day.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.day.on .dw{color:var(--accent-ink);opacity:.8}
+.day.on .dot{background:var(--accent-ink)}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  background:var(--accent);color:var(--accent-ink);font-weight:700;
+  border-radius:12px;padding:12px 18px;box-shadow:var(--shadow);
+}
+.btn.sec{background:var(--surface);color:var(--ink);border:1.5px solid var(--line)}
+.btn.danger{background:var(--bad-soft);color:var(--bad)}
+.btn.sm{padding:8px 12px;font-size:14px;border-radius:10px}
+.btn.wide{width:100%}
+.btnrow{display:flex;gap:8px;margin:12px 0}
+.btnrow .btn{flex:1}
+.empty{text-align:center;color:var(--muted);padding:44px 20px}
+.empty .big{font-size:40px;margin-bottom:8px}
+.sect{font-size:13px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:22px 0 10px}
+.ov{
+  position:fixed;inset:0;z-index:20;background:var(--ground);display:none;
+  overflow-y:auto;-webkit-overflow-scrolling:touch;
+}
+.ov.open{display:block}
+.ov .inner{max-width:520px;margin:0 auto;padding:0 16px 40px}
+.ovbar{
+  position:sticky;top:0;z-index:2;background:var(--ground);
+  display:flex;align-items:center;gap:10px;
+  padding:calc(14px + env(safe-area-inset-top)) 0 10px;
+}
+.ovbar h2{font-size:20px;font-weight:800;letter-spacing:-.02em;margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.clientrow{display:flex;align-items:center;gap:12px}
+.avatar{
+  width:44px;height:44px;border-radius:50%;flex:none;
+  background:var(--accent-soft);color:var(--accent);
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;
+}
+.clientrow .meta{color:var(--muted);font-size:13px;margin-top:2px;display:flex;flex-wrap:wrap;gap:2px 10px}
+.kv{display:flex;gap:10px}
+.kv>*{flex:1}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0;border-bottom:1.5px solid var(--line)}
+.switch:last-child{border-bottom:0}
+.switch .lab{font-weight:600;font-size:15px}
+.switch .sub{color:var(--muted);font-size:13px;margin-top:1px}
+.sw{position:relative;width:48px;height:28px;flex:none;border-radius:999px;background:var(--line);transition:background .15s}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:var(--surface);box-shadow:0 1px 3px rgba(0,0,0,.25);transition:left .15s}
+.sw.on{background:var(--accent)}
+.sw.on::after{left:23px}
+.thumbs{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.thumb{position:relative;width:64px;height:64px;border-radius:10px;overflow:hidden;border:1.5px solid var(--line);background:var(--accent-soft)}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb .x{
+  position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;
+  background:rgba(0,0,0,.55);color:#fff;font-size:12px;line-height:20px;text-align:center;
+}
+.addphoto{
+  width:64px;height:64px;border-radius:10px;border:1.5px dashed var(--line);
+  display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--muted);
+}
+.visit .vhead{display:flex;align-items:baseline;gap:10px}
+.visit .vdate{font-weight:800;font-variant-numeric:tabular-nums;font-size:14px}
+.visit .vprice{margin-left:auto;font-weight:800;font-variant-numeric:tabular-nums}
+.visit .vsvc{margin-top:2px}
+.visit .vnote{color:var(--muted);font-size:14px;margin-top:4px;white-space:pre-wrap}
+.note{background:var(--accent-soft);border:0;border-radius:var(--r);padding:12px 14px;font-size:14px;margin-bottom:10px}
+.note b{color:var(--accent)}
+.hint{color:var(--muted);font-size:13px;margin-top:6px}
+.searchwrap{position:sticky;top:calc(64px + env(safe-area-inset-top));z-index:4;background:var(--ground);padding-bottom:10px}
+table.map{width:100%;border-collapse:collapse;font-size:14px}
+table.map td{padding:6px 8px 6px 0;vertical-align:middle}
+table.map td:first-child{font-weight:600;white-space:nowrap;width:1%}
+#toast{
+  position:fixed;left:50%;bottom:86px;transform:translateX(-50%) translateY(20px);
+  background:var(--ink);color:var(--ground);padding:10px 18px;border-radius:999px;
+  font-size:14px;font-weight:600;opacity:0;pointer-events:none;transition:all .2s;z-index:99;
+  max-width:90vw;text-align:center;
+}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#photoview{position:fixed;inset:0;z-index:30;background:rgba(10,5,8,.92);display:none;align-items:center;justify-content:center}
+#photoview.open{display:flex}
+#photoview img{max-width:96vw;max-height:88vh;border-radius:8px}
+#photoview .x{position:absolute;top:calc(14px + env(safe-area-inset-top));right:16px;color:#fff;font-size:26px;width:44px;height:44px}
+pre.paste-eg{background:var(--surface);border:1.5px solid var(--line);border-radius:10px;padding:10px;font-size:12px;overflow-x:auto;color:var(--muted)}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div id="app">
+  <div id="views"></div>
+</div>
+<nav class="tabbar"><div class="row" id="tabs"></div></nav>
+
+<div class="ov" id="ov-client"><div class="inner" id="ov-client-in"></div></div>
+<div class="ov" id="ov-visit"><div class="inner" id="ov-visit-in"></div></div>
+<div class="ov" id="ov-appt"><div class="inner" id="ov-appt-in"></div></div>
+<div class="ov" id="ov-import"><div class="inner" id="ov-import-in"></div></div>
+<div class="ov" id="ov-map"><div class="inner" id="ov-map-in"></div></div>
+<div id="photoview"><button class="x" data-act="pv-close">✕</button><img id="pv-img" alt="nail photo"></div>
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* ---------------- utils ---------------- */
+const $=(s,r)=>(r||document).querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+const pad=n=>String(n).padStart(2,"0");
+const isoOf=(y,m,d)=>`${y}-${pad(m)}-${pad(d)}`;
+const todayISO=()=>{const t=new Date();return isoOf(t.getFullYear(),t.getMonth()+1,t.getDate());};
+const addDaysISO=(iso,n)=>{const d=new Date(iso+"T12:00:00");d.setDate(d.getDate()+n);return isoOf(d.getFullYear(),d.getMonth()+1,d.getDate());};
+const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function fmtDate(iso){if(!iso)return"";const d=new Date(iso+"T12:00:00");if(isNaN(d))return iso;
+  const t=todayISO();if(iso===t)return"Today";if(iso===addDaysISO(t,1))return"Tomorrow";if(iso===addDaysISO(t,-1))return"Yesterday";
+  return`${DOW[d.getDay()]} ${d.getDate()} ${MON[d.getMonth()]}${d.getFullYear()!==new Date().getFullYear()?" "+d.getFullYear():""}`;}
+function nameKey(s){return String(s||"").toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g,"")
+  .replace(/[^a-z0-9؀-ۿ]+/g," ").trim();}
+function initials(n){const p=String(n||"?").trim().split(/\s+/);return((p[0]||"")[0]||"?").toUpperCase()+((p[1]||"")[0]||"").toUpperCase();}
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("show"),2200);}
+function fmtMoney(n){if(n==null||n==="")return"";const c=SET.currency||"";return(+n).toLocaleString(undefined,{maximumFractionDigits:2})+(c?" "+c:"");}
+
+function parseDateStr(s,dayFirst){s=String(s??"").trim();if(!s)return null;
+  let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);if(m)return isoOf(+m[1],+m[2],+m[3]);
+  m=s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})\b/);
+  if(m){let a=+m[1],b=+m[2],y=+m[3];if(y<100)y+=2000;let d,mo;
+    if(a>12){d=a;mo=b}else if(b>12){mo=a;d=b}else if(dayFirst){d=a;mo=b}else{mo=a;d=b}
+    if(mo>=1&&mo<=12&&d>=1&&d<=31)return isoOf(y,mo,d);return null;}
+  const t=new Date(s);if(!isNaN(t)&&t.getFullYear()>2000)return isoOf(t.getFullYear(),t.getMonth()+1,t.getDate());
+  return null;}
+function parseTime(s){s=String(s??"").trim();if(!s)return{disp:"",sort:9999};
+  const m=s.match(/(\d{1,2})(?:[:.](\d{2}))?\s*(a\.?m\.?|p\.?m\.?|ص|م)?/i);
+  if(!m)return{disp:s,sort:9998};
+  let h=+m[1],mi=+(m[2]||0);const ap=(m[3]||"").toLowerCase();
+  if((/^p/.test(ap)||ap==="م")&&h<12)h+=12;
+  if((/^a/.test(ap)||ap==="ص")&&h===12)h=0;
+  let sort=h*60+mi;
+  if(!ap&&h>=1&&h<=7)sort=(h+12)*60+mi; /* bare 1–7 assumed afternoon for ordering */
+  return{disp:`${h%12===0?12:h%12}:${pad(mi)} ${(sort>=720?"PM":"AM")}`,sort};}
+
+function parseDSV(text){ /* CSV or TSV, quote-aware */
+  const sep=text.slice(0,2000).includes("\t")?"\t":",";
+  const rows=[];let row=[],cur="",q=false;
+  for(let i=0;i<text.length;i++){const c=text[i];
+    if(q){if(c==='"'){if(text[i+1]==='"'){cur+='"';i++}else q=false}else cur+=c;}
+    else if(c==='"')q=true;
+    else if(c===sep){row.push(cur);cur=""}
+    else if(c==="\n"||c==="\r"){if(c==="\r"&&text[i+1]==="\n")i++;row.push(cur);cur="";rows.push(row);row=[];}
+    else cur+=c;}
+  if(cur!==""||row.length)row.push(cur),rows.push(row);
+  return rows.filter(r=>r.some(c=>String(c).trim()!==""));}
+
+/* ---------------- settings ---------------- */
+const DEF_SET={sheetUrl:"",sheetTab:"Lina Schedule",artist:"",dayFirst:true,currency:"USD",waCC:"961",confirmDays:3,
+  msgConfirm:"Hi {name} 💅 A friendly reminder of your appointment on {date} at {time}. See you soon!",
+  msgComeback:"Hi {name} 💅 It's been a while since your last visit — ready for a refresh? Let me know when you'd like to come in!",
+  mapping:null,lastSync:"",hiddenAppts:[]};
+let SET={...DEF_SET};
+try{Object.assign(SET,JSON.parse(localStorage.getItem("nailbook.settings")||"{}"));}catch(e){}
+if(SET.currency==="JD")SET.currency="USD";
+if(SET.waCC==="962")SET.waCC="961";
+function saveSet(){localStorage.setItem("nailbook.settings",JSON.stringify(SET));}
+
+/* ---------------- indexedDB ---------------- */
+let _db=null;
+function db(){return new Promise((res,rej)=>{if(_db)return res(_db);
+  const q=indexedDB.open("nailbook",1);
+  q.onupgradeneeded=e=>{const d=e.target.result;
+    for(const s of["clients","visits","photos","appts"])if(!d.objectStoreNames.contains(s))d.createObjectStore(s,{keyPath:"id"});};
+  q.onsuccess=()=>{_db=q.result;res(_db)};q.onerror=()=>rej(q.error);});}
+async function dbPut(st,v){const d=await db();return new Promise((res,rej)=>{const t=d.transaction(st,"readwrite");t.objectStore(st).put(v);t.oncomplete=res;t.onerror=()=>rej(t.error);});}
+async function dbDel(st,k){const d=await db();return new Promise((res,rej)=>{const t=d.transaction(st,"readwrite");t.objectStore(st).delete(k);t.oncomplete=res;t.onerror=()=>rej(t.error);});}
+async function dbClearStore(st){const d=await db();return new Promise((res,rej)=>{const t=d.transaction(st,"readwrite");t.objectStore(st).clear();t.oncomplete=res;t.onerror=()=>rej(t.error);});}
+async function dbAll(st){const d=await db();return new Promise((res,rej)=>{const r=d.transaction(st).objectStore(st).getAll();r.onsuccess=()=>res(r.result||[]);r.onerror=()=>rej(r.error);});}
+async function dbGet(st,k){const d=await db();return new Promise((res,rej)=>{const r=d.transaction(st).objectStore(st).get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
+
+/* ---------------- state ---------------- */
+const S={view:"today",selDate:todayISO(),clients:[],visits:[],appts:[],search:"",
+  openClientId:null,fromAppt:null,editVisit:null,importRows:null,photoURLs:new Map()};
+async function loadAll(){[S.clients,S.visits,S.appts]=await Promise.all([dbAll("clients"),dbAll("visits"),dbAll("appts")]);}
+function clientByKey(key){if(!key)return null;
+  let c=S.clients.find(c=>c.key===key);if(c)return c;
+  const cands=S.clients.filter(c=>c.key&&(c.key.startsWith(key+" ")||key.startsWith(c.key+" ")));
+  return cands.length===1?cands[0]:null;}
+function clientById(id){return S.clients.find(c=>c.id===id)||null;}
+function visitsOf(id){return S.visits.filter(v=>v.clientId===id).sort((a,b)=>(b.date||"").localeCompare(a.date||""));}
+function lastVisit(id){const v=visitsOf(id);return v[0]||null;}
+function apptsOn(d){return S.appts.filter(a=>a.date===d).sort((a,b)=>a.sort-b.sort);}
+async function photoURL(id){if(S.photoURLs.has(id))return S.photoURLs.get(id);
+  const p=await dbGet("photos",id);if(!p)return null;
+  const u=URL.createObjectURL(p.blob);S.photoURLs.set(id,u);return u;}
+async function hydratePhotos(root){for(const img of root.querySelectorAll("img[data-photo]")){
+  const u=await photoURL(img.dataset.photo);if(u)img.src=u;}}
+
+/* ---------------- WhatsApp / phone ---------------- */
+function waNumber(phone){let p=String(phone||"").replace(/\D/g,"");
+  if(!p)return"";if(p.startsWith("00"))p=p.slice(2);
+  if(p.startsWith("0"))p=(SET.waCC||"")+p.slice(1);return p;}
+function waLink(phone,msg){const n=waNumber(phone);if(!n)return"";
+  return`https://wa.me/${n}${msg?"?text="+encodeURIComponent(msg):""}`;}
+function fillTpl(t,a){return String(t||"").replace(/\{name\}/g,a.name||"").replace(/\{date\}/g,a.date||"").replace(/\{time\}/g,a.time||"");}
+
+/* ---------------- tab shell ---------------- */
+const TABS=[["today","📅","Today"],["clients","💅","Clients"],["care","💬","Follow-ups"],["settings","⚙️","Settings"]];
+function renderTabs(){$("#tabs").innerHTML=TABS.map(([id,ico,lab])=>
+  `<button class="tab ${S.view===id?"on":""}" data-act="tab" data-id="${id}"><span class="ico">${ico}</span>${lab}</button>`).join("");}
+function render(){renderTabs();
+  const v=$("#views");
+  if(S.view==="today")v.innerHTML=viewToday();
+  else if(S.view==="clients")v.innerHTML=viewClients();
+  else if(S.view==="care")v.innerHTML=viewCare();
+  else v.innerHTML=viewSettings();
+  if(S.view==="clients"){const i=$("#search");if(i&&document.activeElement!==i&&S.search)i.value=S.search;}}
+
+/* ---------------- Today ---------------- */
+function apptCard(a){const c=clientByKey(a.key);
+  const isNew=!c;const lv=c?lastVisit(c.id):null;
+  const badges=[];
+  if(a.status==="cancelled")badges.push(`<span class="badge b-bad">cancelled</span>`);
+  else if(a.confirmed)badges.push(`<span class="badge b-ok">confirmed ✓</span>`);
+  else badges.push(`<span class="badge b-warn">not confirmed</span>`);
+  if(isNew)badges.push(`<span class="badge b-new">new client</span>`);
+  const extras=[];
+  if(c&&c.coffee)extras.push(`☕ ${esc(c.coffee)}`);
+  if(c&&c.nextRequest)extras.push(`📌 ${esc(c.nextRequest)}`);
+  if(c&&c.discountOn)extras.push(`🏷️ ${c.discountPct||0}% off`);
+  if(lv)extras.push(`last: ${esc(fmtDate(lv.date))}`);
+  return`<div class="card tap appt ${a.status==="cancelled"?"cancelled":""}" data-act="open-appt" data-id="${a.id}">
+    <div class="time">${esc(a.time||"—")}</div>
+    <div class="who"><div class="name">${esc(a.name)} ${badges.join(" ")}</div>
+    ${a.service?`<div class="svc">${esc(a.service)}</div>`:""}
+    ${extras.length?`<div class="extra">${extras.map(x=>`<span>${x}</span>`).join("")}</div>`:""}</div>
+    <button class="chev" data-act="edit-appt" data-id="${a.id}" aria-label="Edit appointment" style="font-size:17px;padding:8px 2px">✎</button></div>`;}
+function viewToday(){
+  const days=[];for(let i=0;i<14;i++){const d=addDaysISO(todayISO(),i);
+    const dt=new Date(d+"T12:00:00");
+    days.push(`<button class="day ${d===S.selDate?"on":""} ${apptsOn(d).length?"has":""}" data-act="day" data-d="${d}">
+      <div class="dw">${i===0?"Today":DOW[dt.getDay()]}</div><div class="dn">${dt.getDate()}</div><div class="dot"></div></button>`);}
+  const list=apptsOn(S.selDate);
+  return`<div class="topbar"><h1>${esc(fmtDate(S.selDate))}</h1>
+    <button class="iconbtn" data-act="walkin" title="Add walk-in">＋</button>
+    <button class="iconbtn" data-act="sync" title="Sync schedule">⟳</button></div>
+  <main><div class="days">${days.join("")}</div>
+  ${list.length?list.map(apptCard).join(""):
+    `<div class="empty"><div class="big">🗓️</div>No appointments on this day.<br>
+     <div class="hint">Tap ⟳ to pull the schedule from your shared sheet,<br>or ＋ to add a walk-in.</div></div>`}
+  ${SET.lastSync?`<div class="hint" style="text-align:center">Schedule updated ${esc(SET.lastSync)}</div>`:""}</main>`;}
+
+/* ---------------- Clients ---------------- */
+function clientRow(c){const lv=lastVisit(c.id);const n=visitsOf(c.id).length;
+  const meta=[];
+  if(c.phone)meta.push(`📞 ${esc(c.phone)}`);
+  if(c.coffee)meta.push(`☕ ${esc(c.coffee)}`);
+  meta.push(lv?`${n} visit${n>1?"s":""} · last ${esc(fmtDate(lv.date))}`:"no visits yet");
+  const due=c.reminderDate&&c.reminderDate<=todayISO();
+  return`<div class="card tap clientrow" data-act="open-client" data-id="${c.id}">
+    <div class="avatar">${esc(initials(c.name))}</div>
+    <div style="flex:1;min-width:0"><div style="font-weight:700">${esc(c.name)}
+      ${c.discountOn?`<span class="badge b-line">${c.discountPct||0}%</span>`:""}
+      ${due?`<span class="badge b-warn">due back</span>`:""}</div>
+    <div class="meta">${meta.join(" ")}</div></div><div class="chev">›</div></div>`;}
+function viewClients(){
+  const q=nameKey(S.search);
+  const list=S.clients.filter(c=>!q||c.key.includes(q)||String(c.phone||"").includes(S.search.trim()))
+    .sort((a,b)=>a.name.localeCompare(b.name));
+  return`<div class="topbar"><h1>Clients</h1>
+    <button class="iconbtn" data-act="new-client" title="Add client">＋</button></div>
+  <main><div class="searchwrap"><input id="search" type="search" placeholder="Search name or phone…" data-act-input="search" value="${esc(S.search)}"></div>
+  ${list.length?list.map(clientRow).join(""):
+    `<div class="empty"><div class="big">💅</div>${S.clients.length?"No match.":"No clients yet.<br><div class='hint'>They'll appear here as you meet them — open an appointment on Today and add her details.</div>"}</div>`}
+  </main>`;}
+
+/* ---------------- Follow-ups ---------------- */
+function viewCare(){
+  const t=todayISO();const horizon=addDaysISO(t,+SET.confirmDays||3);
+  const upcoming=S.appts.filter(a=>a.date>=t&&a.date<=horizon&&a.status!=="cancelled")
+    .map(a=>({a,c:clientByKey(a.key)})).filter(x=>x.c&&x.c.notifyBefore&&x.c.phone)
+    .sort((x,y)=>x.a.date===y.a.date?x.a.sort-y.a.sort:x.a.date.localeCompare(y.a.date));
+  const remind=S.clients.filter(c=>c.reminderDate&&c.reminderDate<=addDaysISO(t,7))
+    .sort((a,b)=>a.reminderDate.localeCompare(b.reminderDate));
+  const up=upcoming.map(({a,c})=>{
+    const msg=fillTpl(SET.msgConfirm,{name:c.name.split(" ")[0],date:fmtDate(a.date),time:a.time});
+    return`<div class="card"><div class="clientrow"><div class="avatar">${esc(initials(c.name))}</div>
+      <div style="flex:1;min-width:0"><div style="font-weight:700">${esc(c.name)}</div>
+      <div class="meta">${esc(fmtDate(a.date))} · ${esc(a.time||"")}${a.service?" · "+esc(a.service):""}</div></div></div>
+      <div class="btnrow" style="margin-bottom:0">
+        <a class="btn sm" style="text-decoration:none" href="${esc(waLink(c.phone,msg))}" target="_blank" rel="noopener">💬 WhatsApp reminder</a>
+        <button class="btn sm sec" data-act="open-client" data-id="${c.id}">Open card</button></div></div>`;}).join("");
+  const rm=remind.map(c=>{
+    const late=c.reminderDate<=t;
+    const msg=fillTpl(SET.msgComeback,{name:c.name.split(" ")[0],date:fmtDate(c.reminderDate),time:""});
+    return`<div class="card"><div class="clientrow"><div class="avatar">${esc(initials(c.name))}</div>
+      <div style="flex:1;min-width:0"><div style="font-weight:700">${esc(c.name)}
+        <span class="badge ${late?"b-warn":"b-line"}">${esc(fmtDate(c.reminderDate))}</span></div>
+      ${c.reminderNote?`<div class="meta">${esc(c.reminderNote)}</div>`:""}</div></div>
+      <div class="btnrow" style="margin-bottom:0">
+        ${c.phone?`<a class="btn sm" style="text-decoration:none" href="${esc(waLink(c.phone,msg))}" target="_blank" rel="noopener">💬 Message</a>`:""}
+        <button class="btn sm sec" data-act="remind-done" data-id="${c.id}">✓ Done</button>
+        <button class="btn sm sec" data-act="remind-snooze" data-id="${c.id}">+1 wk</button></div></div>`;}).join("");
+  return`<div class="topbar"><h1>Follow-ups</h1></div><main>
+    <div class="hint">Message buttons open <b>your own WhatsApp</b> with the text pre-typed — you review it and press send yourself. Nothing is ever sent automatically.</div>
+    <div class="sect">Confirm — next ${+SET.confirmDays||3} days</div>
+    ${up||`<div class="hint">No one to remind. Clients appear here when their card has “Remind before appointment” switched on and a phone number saved.</div>`}
+    <div class="sect">Due back</div>
+    ${rm||`<div class="hint">No follow-ups due. Set “remind me on…” inside a client's card after her visit.</div>`}</main>`;}
+
+/* ---------------- Settings ---------------- */
+function viewSettings(){
+  return`<div class="topbar"><h1>Settings</h1></div><main>
+  <div class="sect">Schedule source</div>
+  <div class="card">
+    <label>Google Sheet link</label>
+    <input id="set-sheet" placeholder="https://docs.google.com/spreadsheets/d/…" value="${esc(SET.sheetUrl)}">
+    <div class="hint">Only needed for “Sync from Google” (the sheet must be shared as <b>Anyone with the link → Viewer</b> for that). Paste import needs no link and no sharing — it always works.</div>
+    <label>Tab to import (bottom of the spreadsheet)</label>
+    <input id="set-tab" placeholder="e.g. Lina Schedule" value="${esc(SET.sheetTab||"")}">
+    <label>My name on the sheet <span style="font-weight:400">(only if the tab mixes several artists)</span></label>
+    <input id="set-artist" placeholder="leave empty to import the whole tab" value="${esc(SET.artist)}">
+    <div class="btnrow"><button class="btn" data-act="sync-fetch">⟳ Sync from Google</button>
+    <button class="btn sec" data-act="sync-paste">📋 Paste import</button></div>
+    <button class="btn sec wide" data-act="remap" ${SET.mapping?"":"disabled style='opacity:.5'"}>Re-map sheet columns</button>
+    ${SET.lastSync?`<div class="hint">Last import: ${esc(SET.lastSync)}</div>`:""}
+  </div>
+  <div class="sect">Preferences</div>
+  <div class="card">
+    <div class="kv"><div><label>Currency</label><select id="set-cur">
+      ${["USD","LBP"].map(x=>`<option ${SET.currency===x?"selected":""}>${x}</option>`).join("")}
+      ${["USD","LBP"].includes(SET.currency)?"":`<option selected>${esc(SET.currency)}</option>`}</select></div>
+    <div><label>WhatsApp country code</label><input id="set-cc" inputmode="numeric" value="${esc(SET.waCC)}"></div></div>
+    <div class="kv"><div><label>Confirm window (days)</label><input id="set-cd" type="number" min="1" max="14" value="${esc(SET.confirmDays)}"></div>
+    <div><label>Dates in sheet are</label><select id="set-df"><option value="1" ${SET.dayFirst?"selected":""}>day/month/year</option><option value="0" ${SET.dayFirst?"":"selected"}>month/day/year</option></select></div></div>
+    <label>Appointment reminder message</label>
+    <textarea id="set-m1">${esc(SET.msgConfirm)}</textarea>
+    <label>“Come back” message</label>
+    <textarea id="set-m2">${esc(SET.msgComeback)}</textarea>
+    <div class="hint">{name}, {date} and {time} are filled in automatically.</div>
+    <div class="btnrow" style="margin-bottom:0"><button class="btn" data-act="save-settings">Save settings</button></div>
+  </div>
+  <div class="sect">Backup</div>
+  <div class="card">
+    <div class="hint" style="margin:0 0 10px">Everything lives only on this phone. Export a backup regularly — it includes clients, visits and photos, and can be restored on any device.</div>
+    <div class="btnrow" style="margin-bottom:0"><button class="btn" data-act="export">⬇ Export backup</button>
+    <button class="btn sec" data-act="import-backup">⬆ Restore</button></div>
+    <input type="file" id="file-restore" accept=".json,application/json" hidden>
+  </div>
+  <div class="sect">Danger zone</div>
+  <div class="card"><button class="btn danger wide" data-act="wipe">Delete all data</button></div>
+  <div class="hint" style="text-align:center;margin:16px 0">NailBook · your private client book 💅</div></main>`;}
+
+/* ---------------- client card ---------------- */
+function openClient(id,fromAppt){S.openClientId=id;S.fromAppt=fromAppt||null;renderClient();$("#ov-client").classList.add("open");window.scrollTo(0,0);}
+function closeClient(){$("#ov-client").classList.remove("open");S.openClientId=null;S.fromAppt=null;render();}
+function renderClient(){const c=clientById(S.openClientId);if(!c)return closeClient();
+  const vs=visitsOf(c.id);
+  const total=vs.reduce((s,v)=>s+(+v.price||0),0);
+  const vHtml=vs.map(v=>{
+    const ph=(v.photoIds||[]).map(p=>`<div class="thumb" data-act="pv-open" data-id="${p}"><img data-photo="${p}" alt=""></div>`).join("");
+    return`<div class="card tap visit" data-act="edit-visit" data-id="${v.id}">
+      <div class="vhead"><span class="vdate">${esc(fmtDate(v.date))}</span>
+        ${v.discountPct?`<span class="badge b-line">-${v.discountPct}%</span>`:""}
+        <span class="vprice">${esc(fmtMoney(v.price))}</span></div>
+      ${v.services?`<div class="vsvc">${esc(v.services)}</div>`:""}
+      ${v.notes?`<div class="vnote">${esc(v.notes)}</div>`:""}
+      ${ph?`<div class="thumbs">${ph}</div>`:""}</div>`;}).join("");
+  $("#ov-client-in").innerHTML=`
+  <div class="ovbar"><button class="iconbtn" data-act="close-client">‹</button>
+    <h2>${esc(c.name)}</h2>
+    <button class="iconbtn" data-act="del-client" title="Delete client">🗑</button></div>
+  ${S.fromAppt?`<div class="note"><b>${esc(S.fromAppt.time||"")}</b> today — ${esc(S.fromAppt.service||"appointment")}. Tap <b>＋ Add visit</b> when you're done to log it.</div>`:""}
+  ${c.nextRequest?`<div class="note">📌 <b>She asked for:</b> ${esc(c.nextRequest)}</div>`:""}
+  <div class="btnrow">
+    ${c.phone?`<a class="btn sec" style="text-decoration:none" href="tel:${esc(c.phone)}">📞 Call</a>
+    <a class="btn sec" style="text-decoration:none" href="${esc(waLink(c.phone,""))}" target="_blank" rel="noopener">💬 WhatsApp</a>`:""}
+    <button class="btn" data-act="add-visit">＋ Add visit</button></div>
+  <div class="sect">Details</div>
+  <div class="card">
+    <label>Name</label><input id="c-name" value="${esc(c.name)}">
+    <label>Phone</label><input id="c-phone" type="tel" inputmode="tel" placeholder="07…" value="${esc(c.phone||"")}">
+    <label>Favorite coffee ☕</label><input id="c-coffee" placeholder="e.g. cappuccino, extra hot" value="${esc(c.coffee||"")}">
+    <label>Preferences & notes</label>
+    <textarea id="c-prefs" placeholder="Gel vs acrylic, shapes, colors she loves, allergies…">${esc(c.prefs||"")}</textarea>
+    <label>Request for next visit 📌</label>
+    <textarea id="c-next" placeholder="What she asked to have next time (optional)">${esc(c.nextRequest||"")}</textarea>
+    <div class="switch"><div><div class="lab">Discount client</div><div class="sub">Applied automatically to new visits</div></div>
+      <button class="sw ${c.discountOn?"on":""}" data-act="tgl-discount" aria-label="toggle discount"></button></div>
+    <div id="c-disc-wrap" style="${c.discountOn?"":"display:none"}"><label>Discount %</label>
+      <input id="c-disc" type="number" inputmode="numeric" min="0" max="100" value="${esc(c.discountPct??"")}"></div>
+    <div class="switch"><div><div class="lab">Remind before appointment</div><div class="sub">She appears in Follow-ups before her booking</div></div>
+      <button class="sw ${c.notifyBefore?"on":""}" data-act="tgl-notify" aria-label="toggle reminders"></button></div>
+    <label>Due back — remind me on</label>
+    <div class="kv"><input id="c-rdate" type="date" value="${esc(c.reminderDate||"")}">
+      <input id="c-rnote" placeholder="e.g. refill" value="${esc(c.reminderNote||"")}"></div>
+    <div class="btnrow" style="margin-bottom:0"><button class="btn wide" data-act="save-client">Save details</button></div>
+  </div>
+  <div class="sect">Visits ${vs.length?`· ${vs.length} · ${esc(fmtMoney(total))} total`:""}</div>
+  ${vHtml||`<div class="hint">No visits logged yet.</div>`}`;
+  hydratePhotos($("#ov-client-in"));}
+function readClientForm(c){c.name=$("#c-name").value.trim()||c.name;c.key=nameKey(c.name);
+  c.phone=$("#c-phone").value.trim();c.coffee=$("#c-coffee").value.trim();
+  c.prefs=$("#c-prefs").value.trim();c.nextRequest=$("#c-next").value.trim();
+  c.discountPct=+($("#c-disc")?.value||0)||0;
+  c.reminderDate=$("#c-rdate").value||"";c.reminderNote=$("#c-rnote").value.trim();return c;}
+
+/* ---------------- visit editor ---------------- */
+function openVisit(clientId,visitId){const c=clientById(clientId);if(!c)return;
+  let v=visitId?S.visits.find(x=>x.id===visitId):null;
+  const isNew=!v;
+  v=v?{...v,photoIds:[...(v.photoIds||[])]}:{id:uid(),clientId,date:(S.fromAppt&&S.fromAppt.date)||todayISO(),
+    services:(S.fromAppt&&S.fromAppt.service)||"",price:"",discountPct:c.discountOn?(c.discountPct||0):0,notes:"",photoIds:[]};
+  S.editVisit={v,isNew,newPhotoIds:[]};
+  renderVisit();$("#ov-visit").classList.add("open");window.scrollTo(0,0);}
+function renderVisit(){const{v,isNew}=S.editVisit;const c=clientById(v.clientId);
+  const ph=(v.photoIds||[]).map(p=>`<div class="thumb"><img data-photo="${p}" alt="">
+    <button class="x" data-act="ph-del" data-id="${p}">✕</button></div>`).join("");
+  $("#ov-visit-in").innerHTML=`
+  <div class="ovbar"><button class="iconbtn" data-act="cancel-visit">‹</button>
+    <h2>${isNew?"New visit":"Visit"} — ${esc(c.name)}</h2>
+    ${isNew?"":`<button class="iconbtn" data-act="del-visit" title="Delete visit">🗑</button>`}</div>
+  <div class="card">
+    <label>Date</label><input id="v-date" type="date" value="${esc(v.date)}">
+    <label>Services done</label><input id="v-svc" placeholder="e.g. gel manicure + nail art" value="${esc(v.services)}">
+    <div class="kv"><div><label>Price ${SET.currency?`(${esc(SET.currency)})`:""}</label>
+      <input id="v-price" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(v.price)}"></div>
+    <div><label>Discount %</label><input id="v-disc" type="number" inputmode="numeric" min="0" max="100" value="${esc(v.discountPct||0)}"></div></div>
+    <div class="hint" id="v-final"></div>
+    <label>Notes for this visit</label>
+    <textarea id="v-notes" placeholder="Color used, shape, anything to remember…">${esc(v.notes)}</textarea>
+    <label>Request for next visit 📌 <span style="font-weight:400">(saves to her card)</span></label>
+    <textarea id="v-next" placeholder="Optional">${esc(c.nextRequest||"")}</textarea>
+    <label>Photos of the work 📷</label>
+    <div class="thumbs">${ph}<button class="addphoto" data-act="ph-add">＋</button></div>
+    <input type="file" id="file-photo" accept="image/*" multiple hidden>
+    <div class="btnrow" style="margin-bottom:0"><button class="btn wide" data-act="save-visit">Save visit</button></div>
+  </div>`;
+  hydratePhotos($("#ov-visit-in"));updFinal();
+  $("#v-price").addEventListener("input",updFinal);$("#v-disc").addEventListener("input",updFinal);}
+function updFinal(){const p=+($("#v-price")?.value||0),d=+($("#v-disc")?.value||0);
+  const el=$("#v-final");if(!el)return;
+  el.textContent=p&&d?`After ${d}% discount: ${fmtMoney(p*(1-d/100))} (enter the price before discount)`:"";}
+async function closeVisit(discard){const ev=S.editVisit;if(!ev)return;
+  if(discard)for(const id of ev.newPhotoIds){await dbDel("photos",id);const u=S.photoURLs.get(id);if(u){URL.revokeObjectURL(u);S.photoURLs.delete(id);}}
+  S.editVisit=null;$("#ov-visit").classList.remove("open");
+  if(S.openClientId)renderClient();}
+function shrinkImage(file){return new Promise((res,rej)=>{
+  const url=URL.createObjectURL(file);const img=new Image();
+  img.onload=()=>{const MAX=1280;let{width:w,height:h}=img;
+    if(w>MAX||h>MAX){const k=MAX/Math.max(w,h);w=Math.round(w*k);h=Math.round(h*k);}
+    const cv=document.createElement("canvas");cv.width=w;cv.height=h;
+    cv.getContext("2d").drawImage(img,0,0,w,h);
+    cv.toBlob(b=>{URL.revokeObjectURL(url);b?res(b):rej(new Error("encode failed"));},"image/jpeg",.82);};
+  img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error("bad image"));};
+  img.src=url;});}
+
+/* ---------------- appointment editor ---------------- */
+function openAppt(id){
+  const a=id?S.appts.find(x=>x.id===id):null;
+  S.editAppt=a?{...a}:{id:"man|"+uid(),src:"manual",date:S.selDate,time:"",sort:9999,
+    name:"",key:"",service:"",confirmed:true,status:""};
+  S.editApptIsNew=!a;
+  renderAppt();$("#ov-appt").classList.add("open");window.scrollTo(0,0);}
+function renderAppt(){const a=S.editAppt;
+  $("#ov-appt-in").innerHTML=`
+  <div class="ovbar"><button class="iconbtn" data-act="close-appt">‹</button>
+    <h2>${S.editApptIsNew?"New appointment":"Edit appointment"}</h2>
+    ${S.editApptIsNew?"":`<button class="iconbtn" data-act="del-appt" title="Delete appointment">🗑</button>`}</div>
+  <div class="card">
+    <label>Client name</label><input id="a-name" value="${esc(a.name)}">
+    <label>Date</label><input id="a-date" type="date" value="${esc(a.date)}">
+    <div class="kv"><div><label>Time</label><input id="a-time" placeholder="e.g. 3:30 PM" value="${esc(a.time)}"></div>
+    <div><label>Status</label><select id="a-status">
+      <option value="conf" ${a.confirmed&&a.status!=="cancelled"?"selected":""}>Confirmed</option>
+      <option value="unconf" ${!a.confirmed&&a.status!=="cancelled"?"selected":""}>Not confirmed</option>
+      <option value="cancelled" ${a.status==="cancelled"?"selected":""}>Cancelled</option></select></div></div>
+    <label>Service</label><input id="a-svc" placeholder="e.g. gel manicure" value="${esc(a.service)}">
+    <div class="btnrow" style="margin-bottom:0"><button class="btn wide" data-act="save-appt">Save appointment</button></div>
+  </div>
+  ${a.src==="sheet"?`<div class="hint">This appointment came from the shared sheet. Your changes are kept — the next import won't overwrite them.</div>`:""}`;}
+
+/* ---------------- sheet sync ---------------- */
+function sheetIdOf(url){const m=String(url||"").match(/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);return m?m[1]:null;}
+function sheetGidOf(url){const m=String(url||"").match(/[#?&]gid=(\d+)/);return m?m[1]:null;}
+async function syncFetch(){
+  const id=sheetIdOf(SET.sheetUrl);
+  if(!id){toast("Add your Google Sheet link in Settings first");S.view="settings";render();return;}
+  toast("Fetching schedule…");
+  const gid=sheetGidOf(SET.sheetUrl);
+  const tab=(SET.sheetTab||"").trim();
+  const url=`https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv${tab?`&sheet=${encodeURIComponent(tab)}`:gid?`&gid=${gid}`:""}`;
+  try{const r=await fetch(url);
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    const text=await r.text();
+    if(/^\s*</.test(text))throw new Error("not shared");
+    beginImport(parseDSV(text));
+  }catch(e){openImport(true);}}
+function openImport(fetchFailed){$("#ov-import-in").innerHTML=`
+  <div class="ovbar"><button class="iconbtn" data-act="close-import">‹</button><h2>Import schedule</h2></div>
+  ${fetchFailed?`<div class="note">Couldn't reach Google from here (this page can't call other websites, or the sheet isn't link-shared). <b>Paste import works everywhere:</b></div>`:""}
+  <div class="card">
+    <b>From the Google Sheets app:</b>
+    <div class="hint" style="margin-bottom:8px">1. Open the schedule — the <b>${esc(SET.sheetTab||"schedule")}</b> tab<br>2. Select the cells — <b>include the header row</b> (Name, Date, Time, Service…)<br>3. Copy, come back here, and paste below</div>
+    <textarea id="paste-box" style="min-height:120px" placeholder="Paste the copied schedule here…"></textarea>
+    <div class="btnrow"><button class="btn" data-act="paste-go">Import pasted rows</button></div>
+    <b>Or a CSV file</b> <span class="hint">(File → Download → CSV on a computer)</span>
+    <div class="btnrow" style="margin-bottom:0"><button class="btn sec wide" data-act="csv-pick">Choose CSV file</button></div>
+    <input type="file" id="file-csv" accept=".csv,.tsv,.txt,text/csv" hidden>
+  </div>`;
+  $("#ov-import").classList.add("open");window.scrollTo(0,0);}
+function beginImport(rows){
+  if(!rows||rows.length<1){toast("Nothing to import");return;}
+  S.importRows=rows;
+  const width=Math.max(...rows.map(r=>r.length));
+  const m=SET.mapping;
+  if(m&&m.width===width&&m.name<width&&m.date<width){doImport();return;}
+  openMap();}
+function guessCol(headers,res){const H=headers.map(h=>String(h).toLowerCase());
+  const find=re=>H.findIndex(h=>re.test(h));
+  return{name:find(/name|client|customer|اسم/)>=0?find(/name|client|customer|اسم/):0,
+    date:find(/date|day|تاريخ/),time:find(/time|hour|وقت|ساعة/),
+    service:find(/service|treat|خدمة/),artist:find(/artist|staff|tech|emp|by|nail/),
+    confirm:find(/confirm|status|تأكيد/)};}
+function openMap(){const rows=S.importRows;const headers=rows[0];
+  const width=Math.max(...rows.map(r=>r.length));
+  const g={...guessCol(headers),...(SET.mapping&&SET.mapping.width===width?SET.mapping:{})};
+  const opts=sel=>{let o=`<option value="-1">— none —</option>`;
+    for(let i=0;i<width;i++){const h=String(headers[i]??"").trim()||`Column ${i+1}`;
+      const eg=String((rows[1]||[])[i]??"").trim();
+      o+=`<option value="${i}" ${sel===i?"selected":""}>${esc(h)}${eg?` (e.g. ${esc(eg.slice(0,18))})`:""}</option>`;}
+    return o;};
+  const row=(lab,id,sel,req)=>`<tr><td>${lab}${req?" *":""}</td><td><select id="map-${id}">${opts(sel)}</select></td></tr>`;
+  $("#ov-map-in").innerHTML=`
+  <div class="ovbar"><button class="iconbtn" data-act="close-map">‹</button><h2>Which column is which?</h2></div>
+  <div class="card">
+    <div class="hint" style="margin-bottom:8px">Found ${rows.length} rows. Tell NailBook once — it remembers for next time.</div>
+    <table class="map">
+      ${row("Client name","name",g.name,true)}
+      ${row("Date","date",g.date,true)}
+      ${row("Time","time",g.time)}
+      ${row("Service","service",g.service)}
+      ${row("Nail artist","artist",g.artist)}
+      ${row("Confirmed","confirm",g.confirm)}
+    </table>
+    <div class="switch" style="border:0"><div class="lab">First row is headers</div>
+      <button class="sw ${SET.mapping&&SET.mapping.hasHeader===false?"":"on"}" id="map-header" data-act="tgl-sw"></button></div>
+    <div class="btnrow" style="margin-bottom:0"><button class="btn wide" data-act="map-go">Import</button></div>
+  </div>`;
+  $("#ov-map").classList.add("open");window.scrollTo(0,0);}
+async function doImport(){
+  const rows=S.importRows;const m=SET.mapping;
+  const data=m.hasHeader?rows.slice(1):rows;
+  const get=(r,i)=>i>=0?String(r[i]??"").trim():"";
+  const artistFilter=nameKey(SET.artist);
+  let ok=0,skipped=0,unknown=new Set();
+  const fresh=[];
+  for(const r of data){
+    const name=get(r,m.name);const dateRaw=get(r,m.date);
+    if(!name||!dateRaw){skipped++;continue;}
+    const date=parseDateStr(dateRaw,SET.dayFirst);
+    if(!date){skipped++;continue;}
+    if(artistFilter&&m.artist>=0){const a=nameKey(get(r,m.artist));
+      if(a&&!a.includes(artistFilter)&&!artistFilter.includes(a)){continue;}}
+    const t=parseTime(get(r,m.time));
+    const conf=get(r,m.confirm);const cl=conf.toLowerCase();
+    const cancelled=/cancel|كنسل|ملغ/.test(cl);
+    const confirmed=!!conf&&!cancelled&&!/^(no|n|pending|tbd|-|\?)$/.test(cl);
+    const key=nameKey(name);
+    fresh.push({id:`sh|${date}|${t.disp}|${key}`,src:"sheet",date,time:t.disp,sort:t.sort,
+      name,key,service:get(r,m.service),confirmed,status:cancelled?"cancelled":"",});
+    if(!clientByKey(key))unknown.add(key);
+    ok++;}
+  SET.hiddenAppts=(SET.hiddenAppts||[]).filter(h=>h.slice(0,10)>=addDaysISO(todayISO(),-30));saveSet();
+  const hidden=new Set(SET.hiddenAppts);
+  const manual=S.appts.filter(a=>a.src==="manual");
+  const manualDK=new Set(manual.map(a=>a.date+"|"+a.key));
+  const kept=fresh.filter(a=>!hidden.has(a.date+"|"+a.key)&&!manualDK.has(a.date+"|"+a.key));
+  ok=kept.length;
+  await dbClearStore("appts");
+  const seen=new Set();
+  for(const a of[...kept,...manual]){if(seen.has(a.id))continue;seen.add(a.id);await dbPut("appts",a);}
+  S.appts=[...kept,...manual.filter(a=>!kept.some(k=>k.id===a.id))];
+  const now=new Date();
+  SET.lastSync=`${fmtDate(todayISO())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;saveSet();
+  S.importRows=null;
+  $("#ov-map").classList.remove("open");$("#ov-import").classList.remove("open");
+  S.view="today";render();
+  toast(`Imported ${ok} appointment${ok!==1?"s":""}${unknown.size?` · ${unknown.size} new client${unknown.size!==1?"s":""}`:""}${skipped?` · ${skipped} rows skipped`:""}`);}
+
+/* ---------------- backup ---------------- */
+function blobToDataURL(b){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(b);});}
+function dataURLToBlob(u){const[h,b64]=u.split(",");const mime=(h.match(/data:(.*?);/)||[])[1]||"image/jpeg";
+  const bin=atob(b64);const a=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i);
+  return new Blob([a],{type:mime});}
+async function exportBackup(){
+  toast("Preparing backup…");
+  const photos=[];
+  for(const p of await dbAll("photos"))photos.push({id:p.id,dataUrl:await blobToDataURL(p.blob)});
+  const payload=JSON.stringify({app:"nailbook",version:1,exportedAt:new Date().toISOString(),
+    settings:SET,clients:S.clients,visits:S.visits,appts:S.appts,photos});
+  const fname=`nailbook-backup-${todayISO()}.json`;
+  if(window.claude&&window.claude.downloads){
+    try{await window.claude.downloads.save({filename:fname,data:payload});toast("Backup saved ✓");return;}
+    catch(e){if(e&&e.code==="declined"){toast("Backup cancelled");return;}
+      if(e&&e.code==="rate_limited"){toast("Try again in a moment");return;}}}
+  try{const a=document.createElement("a");
+    a.href=URL.createObjectURL(new Blob([payload],{type:"application/json"}));
+    a.download=fname;document.body.appendChild(a);a.click();a.remove();toast("Backup downloaded ✓");}
+  catch(e){toast("Couldn't save the backup here");}}
+async function restoreBackup(file){
+  let j;try{j=JSON.parse(await file.text());}catch(e){toast("That file isn't a NailBook backup");return;}
+  if(!j||j.app!=="nailbook"||!Array.isArray(j.clients)){toast("That file isn't a NailBook backup");return;}
+  if(!confirm(`Replace everything on this device with the backup from ${j.exportedAt?j.exportedAt.slice(0,10):"?"}?\n(${j.clients.length} clients, ${(j.visits||[]).length} visits)`))return;
+  for(const st of["clients","visits","photos","appts"])await dbClearStore(st);
+  for(const u of S.photoURLs.values())URL.revokeObjectURL(u);S.photoURLs.clear();
+  for(const c of j.clients)await dbPut("clients",c);
+  for(const v of j.visits||[])await dbPut("visits",v);
+  for(const a of j.appts||[])await dbPut("appts",a);
+  for(const p of j.photos||[])await dbPut("photos",{id:p.id,blob:dataURLToBlob(p.dataUrl)});
+  if(j.settings){SET={...DEF_SET,...j.settings};saveSet();}
+  await loadAll();render();toast("Backup restored ✓");}
+
+/* ---------------- actions ---------------- */
+async function newClient(name,then){
+  const n=(name||"").trim()||prompt("Client name:","");
+  if(!n)return;
+  const c={id:uid(),name:n,key:nameKey(n),phone:"",coffee:"",prefs:"",nextRequest:"",
+    discountOn:false,discountPct:0,notifyBefore:false,reminderDate:"",reminderNote:"",createdAt:todayISO()};
+  await dbPut("clients",c);S.clients.push(c);
+  if(then)then(c);else{render();openClient(c.id);}}
+
+document.addEventListener("input",e=>{
+  const t=e.target;
+  if(t&&t.dataset&&t.dataset.actInput==="search"){S.search=t.value;
+    const main=t.closest("main");if(main){ /* re-render list only */ }
+    render();const i=$("#search");if(i){i.focus();const l=i.value.length;i.setSelectionRange(l,l);}}});
+
+document.addEventListener("click",async e=>{
+  const b=e.target.closest("[data-act]");if(!b)return;
+  const act=b.dataset.act,id=b.dataset.id;
+  if(b.tagName==="A")return; /* let links behave */
+  switch(act){
+    case"tab":S.view=b.dataset.id;render();window.scrollTo(0,0);break;
+    case"day":S.selDate=b.dataset.d;render();break;
+    case"sync":case"sync-fetch":await syncFetch();break;
+    case"sync-paste":openImport(false);break;
+    case"close-import":$("#ov-import").classList.remove("open");break;
+    case"paste-go":{const txt=$("#paste-box").value;if(!txt.trim()){toast("Paste the schedule first");break;}
+      beginImport(parseDSV(txt));break;}
+    case"csv-pick":$("#file-csv").click();break;
+    case"close-map":$("#ov-map").classList.remove("open");break;
+    case"tgl-sw":b.classList.toggle("on");break;
+    case"map-go":{const gv=k=>+($("#map-"+k).value);
+      const m={name:gv("name"),date:gv("date"),time:gv("time"),service:gv("service"),
+        artist:gv("artist"),confirm:gv("confirm"),
+        hasHeader:$("#map-header").classList.contains("on"),
+        width:Math.max(...S.importRows.map(r=>r.length))};
+      if(m.name<0||m.date<0){toast("Name and Date columns are required");break;}
+      SET.mapping=m;saveSet();await doImport();break;}
+    case"remap":if(S.importRows)openMap();else{toast("Run an import first — mapping opens automatically");}break;
+    case"walkin":openAppt(null);break;
+    case"edit-appt":openAppt(id);break;
+    case"close-appt":S.editAppt=null;$("#ov-appt").classList.remove("open");break;
+    case"save-appt":{const a=S.editAppt;if(!a)break;
+      const name=$("#a-name").value.trim();if(!name){toast("Client name is required");break;}
+      const t=parseTime($("#a-time").value);const st=$("#a-status").value;
+      const upd={...a,src:"manual",name,key:nameKey(name),date:$("#a-date").value||todayISO(),
+        time:t.disp,sort:t.sort,service:$("#a-svc").value.trim(),
+        confirmed:st==="conf",status:st==="cancelled"?"cancelled":""};
+      await dbPut("appts",upd);
+      const i=S.appts.findIndex(x=>x.id===upd.id);if(i>=0)S.appts[i]=upd;else S.appts.push(upd);
+      S.editAppt=null;$("#ov-appt").classList.remove("open");render();toast("Appointment saved ✓");break;}
+    case"del-appt":{const a=S.editAppt;if(!a)break;
+      if(!confirm(`Delete ${a.name||"this appointment"} on ${fmtDate(a.date)}?`))break;
+      SET.hiddenAppts=[...(SET.hiddenAppts||[]),a.date+"|"+a.key];saveSet();
+      await dbDel("appts",a.id);S.appts=S.appts.filter(x=>x.id!==a.id);
+      S.editAppt=null;$("#ov-appt").classList.remove("open");render();toast("Appointment deleted");break;}
+    case"open-appt":{const a=S.appts.find(x=>x.id===id);if(!a)break;
+      const c=clientByKey(a.key);
+      if(c)openClient(c.id,a);
+      else await newClient(a.name,nc=>{render();openClient(nc.id,a);});
+      break;}
+    case"new-client":await newClient("");break;
+    case"open-client":openClient(id);break;
+    case"close-client":closeClient();break;
+    case"save-client":{const c=clientById(S.openClientId);if(!c)break;
+      readClientForm(c);await dbPut("clients",c);renderClient();render();toast("Saved ✓");break;}
+    case"tgl-discount":{const c=clientById(S.openClientId);if(!c)break;
+      c.discountOn=!c.discountOn;b.classList.toggle("on",c.discountOn);
+      $("#c-disc-wrap").style.display=c.discountOn?"":"none";await dbPut("clients",c);break;}
+    case"tgl-notify":{const c=clientById(S.openClientId);if(!c)break;
+      c.notifyBefore=!c.notifyBefore;b.classList.toggle("on",c.notifyBefore);await dbPut("clients",c);break;}
+    case"del-client":{const c=clientById(S.openClientId);if(!c)break;
+      const vs=visitsOf(c.id);
+      if(!confirm(`Delete ${c.name}${vs.length?` and her ${vs.length} visit${vs.length>1?"s":""}`:""}? This cannot be undone.`))break;
+      for(const v of vs){for(const p of v.photoIds||[])await dbDel("photos",p);await dbDel("visits",v.id);}
+      await dbDel("clients",c.id);
+      S.clients=S.clients.filter(x=>x.id!==c.id);S.visits=S.visits.filter(x=>x.clientId!==c.id);
+      closeClient();toast("Client deleted");break;}
+    case"add-visit":openVisit(S.openClientId);break;
+    case"edit-visit":if(e.target.closest("[data-act='pv-open']"))break;openVisit(S.openClientId,id);break;
+    case"cancel-visit":await closeVisit(true);break;
+    case"save-visit":{const ev=S.editVisit;if(!ev)break;const v=ev.v;
+      v.date=$("#v-date").value||todayISO();v.services=$("#v-svc").value.trim();
+      v.price=$("#v-price").value===""?"":+$("#v-price").value;
+      v.discountPct=+($("#v-disc").value||0)||0;v.notes=$("#v-notes").value.trim();
+      await dbPut("visits",v);
+      const i=S.visits.findIndex(x=>x.id===v.id);if(i>=0)S.visits[i]=v;else S.visits.push(v);
+      const c=clientById(v.clientId);
+      if(c){c.nextRequest=$("#v-next").value.trim();
+        if(!c.reminderDate){/* leave as-is */}
+        await dbPut("clients",c);}
+      ev.newPhotoIds=[];await closeVisit(false);render();toast("Visit saved ✓");break;}
+    case"del-visit":{const ev=S.editVisit;if(!ev||ev.isNew)break;
+      if(!confirm("Delete this visit?"))break;
+      for(const p of ev.v.photoIds||[])await dbDel("photos",p);
+      await dbDel("visits",ev.v.id);S.visits=S.visits.filter(x=>x.id!==ev.v.id);
+      ev.newPhotoIds=[];await closeVisit(false);render();toast("Visit deleted");break;}
+    case"ph-add":$("#file-photo").click();break;
+    case"ph-del":{const ev=S.editVisit;if(!ev)break;
+      ev.v.photoIds=ev.v.photoIds.filter(p=>p!==id);
+      if(ev.newPhotoIds.includes(id)){await dbDel("photos",id);ev.newPhotoIds=ev.newPhotoIds.filter(p=>p!==id);}
+      renderVisit();break;}
+    case"pv-open":{e.stopPropagation();const u=await photoURL(id);
+      if(u){$("#pv-img").src=u;$("#photoview").classList.add("open");}break;}
+    case"pv-close":$("#photoview").classList.remove("open");break;
+    case"remind-done":{const c=clientById(id);if(!c)break;
+      c.reminderDate="";c.reminderNote="";await dbPut("clients",c);render();toast("Follow-up done ✓");break;}
+    case"remind-snooze":{const c=clientById(id);if(!c)break;
+      c.reminderDate=addDaysISO(c.reminderDate<todayISO()?todayISO():c.reminderDate,7);
+      await dbPut("clients",c);render();toast("Snoozed a week");break;}
+    case"save-settings":{
+      SET.sheetUrl=$("#set-sheet").value.trim();SET.sheetTab=$("#set-tab").value.trim();
+      SET.artist=$("#set-artist").value.trim();
+      SET.currency=$("#set-cur").value.trim();SET.waCC=$("#set-cc").value.replace(/\D/g,"");
+      SET.confirmDays=+$("#set-cd").value||3;SET.dayFirst=$("#set-df").value==="1";
+      SET.msgConfirm=$("#set-m1").value;SET.msgComeback=$("#set-m2").value;
+      saveSet();toast("Settings saved ✓");break;}
+    case"export":{
+      if($("#set-sheet")){SET.sheetUrl=$("#set-sheet").value.trim();saveSet();}
+      await exportBackup();break;}
+    case"import-backup":$("#file-restore").click();break;
+    case"wipe":{if(!confirm("Delete ALL clients, visits, photos and appointments from this device?"))break;
+      if(!confirm("Really sure? There is no undo. (Export a backup first!)"))break;
+      for(const st of["clients","visits","photos","appts"])await dbClearStore(st);
+      for(const u of S.photoURLs.values())URL.revokeObjectURL(u);S.photoURLs.clear();
+      localStorage.removeItem("nailbook.settings");SET={...DEF_SET};
+      await loadAll();render();toast("All data deleted");break;}
+  }});
+
+document.addEventListener("change",async e=>{
+  const t=e.target;
+  if(t.id==="file-csv"&&t.files[0]){beginImport(parseDSV(await t.files[0].text()));t.value="";}
+  if(t.id==="file-restore"&&t.files[0]){await restoreBackup(t.files[0]);t.value="";}
+  if(t.id==="file-photo"&&t.files.length){
+    const ev=S.editVisit;if(!ev)return;
+    toast("Adding photo…");
+    for(const f of[...t.files]){
+      try{const blob=await shrinkImage(f);const id=uid();
+        await dbPut("photos",{id,blob});ev.v.photoIds.push(id);ev.newPhotoIds.push(id);}
+      catch(err){toast("Couldn't read that photo");}}
+    t.value="";renderVisit();}});
+
+/* ---------------- boot ---------------- */
+if("serviceWorker" in navigator&&location.protocol==="https:")
+  navigator.serviceWorker.register("./sw.js").catch(()=>{});
+(async function(){await loadAll();render();})();
+</script>
