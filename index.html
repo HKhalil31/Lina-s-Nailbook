@@ -216,6 +216,13 @@ pre.paste-eg{background:var(--surface);border:1.5px solid var(--line);border-rad
 .wc-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
 .wc-scroll{overflow-x:auto}
 .wc-scroll .wc{min-width:540px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.stat{background:var(--surface);border:1.5px solid var(--line);border-radius:12px;padding:12px 6px;text-align:center;box-shadow:var(--shadow)}
+.stat .n{font-size:17px;font-weight:800;font-variant-numeric:tabular-nums}
+.stat .l{font-size:11px;color:var(--muted);font-weight:700;margin-top:2px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.chip{border:1.5px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 14px;font-size:13px;font-weight:700}
+.chip.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
 </style>
 
@@ -295,28 +302,38 @@ function parseDSV(text){ /* CSV or TSV, quote-aware */
   return rows.filter(r=>r.some(c=>String(c).trim()!==""));}
 
 /* ---------------- settings ---------------- */
-const DEF_SET={sheetUrl:"",sheetTab:"Lina Schedule",artist:"",dayFirst:true,currency:"USD",waCC:"961",confirmDays:3,
+const DEF_SET={sheetUrl:"",sheetTab:"Lina Schedule",artist:"",dayFirst:true,currency:"USD",waCC:"961",confirmDays:1,
   msgConfirm:"Hi {name} 💅 A friendly reminder of your appointment on {date} at {time}. See you soon!",
   msgComeback:"Hi {name} 💅 It's been a while since your last visit — ready for a refresh? Let me know when you'd like to come in!",
-  servicesTxt:"Manicure:\nRussian Manicure\nRussian Manicure + Gel Polish\nRussian Manicure + French\nGel Extensions – Full Set\nGel Extensions – Refill\nAcrylic – Full Set\nAcrylic – Refill\nGel Polish Removal\nNail Art / Design\nNail Repair\nClassic Manicure\nSpa Manicure\nPedicure:\nRussian Pedicure\nRussian Pedicure + Gel Polish\nRussian Pedicure + French\nClassic Pedicure\nSpa Pedicure\nCallus Treatment\nCombo:\nRussian Mani + Pedi",
+  servicesTxt:"Manicure:\nRussian Manicure = 20\nRussian Manicure + Gel Polish = 30\nRussian Manicure + French = 35\nGel Extensions – Full Set = 45\nGel Extensions – Refill = 35\nAcrylic – Full Set = 45\nAcrylic – Refill = 35\nGel Polish Removal = 8\nNail Art / Design = 10\nNail Repair = 5\nClassic Manicure = 12\nSpa Manicure = 18\nPedicure:\nRussian Pedicure = 25\nRussian Pedicure + Gel Polish = 35\nRussian Pedicure + French = 40\nClassic Pedicure = 15\nSpa Pedicure = 22\nCallus Treatment = 12\nCombo:\nRussian Mani + Pedi = 40",
   mapping:null,lastSync:"",hiddenAppts:[]};
 let SET={...DEF_SET};
 try{Object.assign(SET,JSON.parse(localStorage.getItem("nailbook.settings")||"{}"));}catch(e){}
 if(SET.currency==="JD")SET.currency="USD";
 if(SET.waCC==="962")SET.waCC="961";
+if(SET.servicesTxt&&!SET.servicesTxt.includes("=")&&SET.servicesTxt.startsWith("Manicure:"))SET.servicesTxt=DEF_SET.servicesTxt;
+if(SET.confirmDays===3)SET.confirmDays=1;
 function saveSet(){localStorage.setItem("nailbook.settings",JSON.stringify(SET));}
-function serviceLines(){return(SET.servicesTxt||"").split("\n").map(s=>s.trim()).filter(Boolean);}
+function serviceItems(){return(SET.servicesTxt||"").split("\n").map(s=>s.trim()).filter(Boolean).map(l=>{
+  if(l.endsWith(":"))return{group:l.slice(0,-1)};
+  const m=l.match(/^(.+?)\s*=\s*([\d.,]+)\s*$/);
+  return m?{name:m[1].trim(),price:parseFloat(m[2].replace(",","."))}:{name:l,price:null};});}
+function serviceNames(){return serviceItems().filter(i=>i.name).map(i=>i.name);}
+function servicePrice(name){const it=serviceItems().find(i=>i.name===name);
+  return it&&it.price!=null&&!isNaN(it.price)?it.price:null;}
 function serviceOptionsHTML(sel){let h=`<option value="">— choose from menu —</option>`,open=false;
-  for(const l of serviceLines()){
-    if(l.endsWith(":")){if(open)h+="</optgroup>";h+=`<optgroup label="${esc(l.slice(0,-1))}">`;open=true;}
-    else h+=`<option ${l===sel?"selected":""}>${esc(l)}</option>`;}
+  for(const it of serviceItems()){
+    if(it.group!==undefined){if(open)h+="</optgroup>";h+=`<optgroup label="${esc(it.group)}">`;open=true;}
+    else h+=`<option value="${esc(it.name)}" ${it.name===sel?"selected":""}>${esc(it.name)}${it.price!=null?` — ${esc(fmtMoney(it.price))}`:""}</option>`;}
   if(open)h+="</optgroup>";return h;}
 function splitService(s){s=String(s||"").trim();if(!s)return{sel:"",custom:""};
-  const opts=serviceLines().filter(l=>!l.endsWith(":"));
+  const opts=serviceNames();
   if(opts.includes(s))return{sel:s,custom:""};
   let best="";for(const l of opts)if(s.startsWith(l+" + ")&&l.length>best.length)best=l;
   if(best)return{sel:best,custom:s.slice(best.length+3)};
   return{sel:"",custom:s};}
+function paidAmount(v){if(v.price===""||v.price==null)return null;
+  return Math.round((+v.price)*(1-(+v.discountPct||0)/100)*100)/100;}
 function joinService(sel,custom){sel=String(sel||"").trim();custom=String(custom||"").trim();
   return sel&&custom?sel+" + "+custom:(sel||custom);}
 
@@ -335,6 +352,7 @@ async function dbGet(st,k){const d=await db();return new Promise((res,rej)=>{con
 
 /* ---------------- state ---------------- */
 const S={view:"today",selDate:todayISO(),clients:[],visits:[],appts:[],search:"",log:[],
+  mFrom:addDaysISO(todayISO(),-6),mTo:todayISO(),mPreset:"7d",
   openClientId:null,fromAppt:null,editVisit:null,importRows:null,photoURLs:new Map()};
 async function loadAll(){[S.clients,S.visits,S.appts,S.log]=await Promise.all([dbAll("clients"),dbAll("visits"),dbAll("appts"),dbAll("log")]);
   S.log.sort((a,b)=>b.ts-a.ts);S.log=S.log.slice(0,3);}
@@ -400,7 +418,7 @@ function waLink(phone,msg){const n=waNumber(phone);if(!n)return"";
 function fillTpl(t,a){return String(t||"").replace(/\{name\}/g,a.name||"").replace(/\{date\}/g,a.date||"").replace(/\{time\}/g,a.time||"");}
 
 /* ---------------- tab shell ---------------- */
-const TABS=[["today","📅","Today"],["clients","💅","Clients"],["care","💬","Follow-ups"],["settings","⚙️","Settings"]];
+const TABS=[["today","📅","Today"],["clients","💅","Clients"],["care","💬","Follow-ups"],["money","💰","Earnings"],["settings","⚙️","Settings"]];
 function renderTabs(){$("#tabs").innerHTML=TABS.map(([id,ico,lab])=>
   `<button class="tab ${S.view===id?"on":""}" data-act="tab" data-id="${id}"><span class="ico">${ico}</span>${lab}</button>`).join("");}
 function render(){renderTabs();
@@ -409,6 +427,7 @@ function render(){renderTabs();
   if(S.view==="today")v.innerHTML=viewToday();
   else if(S.view==="clients")v.innerHTML=viewClients();
   else if(S.view==="care")v.innerHTML=viewCare();
+  else if(S.view==="money")v.innerHTML=viewMoney();
   else v.innerHTML=viewSettings();
   if(S.view==="clients"){const i=$("#search");if(i&&document.activeElement!==i&&S.search)i.value=S.search;}}
 
@@ -511,7 +530,7 @@ function viewClients(){
 
 /* ---------------- Follow-ups ---------------- */
 function viewCare(){
-  const t=todayISO();const horizon=addDaysISO(t,+SET.confirmDays||3);
+  const t=todayISO();const horizon=addDaysISO(t,+SET.confirmDays||1);
   const upcoming=S.appts.filter(a=>a.date>=t&&a.date<=horizon&&a.status!=="cancelled")
     .map(a=>({a,c:clientByKey(a.key)})).filter(x=>x.c&&x.c.notifyBefore&&x.c.phone)
     .sort((x,y)=>x.a.date===y.a.date?x.a.sort-y.a.sort:x.a.date.localeCompare(y.a.date));
@@ -538,10 +557,40 @@ function viewCare(){
         <button class="btn sm sec" data-act="remind-snooze" data-id="${c.id}">+1 wk</button></div></div>`;}).join("");
   return`<div class="topbar"><h1>Follow-ups</h1></div><main>
     <div class="hint">Message buttons open <b>your own WhatsApp</b> with the text pre-typed — you review it and press send yourself. Nothing is ever sent automatically.</div>
-    <div class="sect">Confirm — next ${+SET.confirmDays||3} days</div>
+    <div class="sect">Confirm — ${(+SET.confirmDays||1)===1?"today & tomorrow":`next ${+SET.confirmDays} days`}</div>
     ${up||`<div class="hint">No one to remind. Clients appear here when their card has “Remind before appointment” switched on and a phone number saved.</div>`}
     <div class="sect">Due back</div>
     ${rm||`<div class="hint">No follow-ups due. Set “remind me on…” inside a client's card after her visit.</div>`}</main>`;}
+
+/* ---------------- Earnings ---------------- */
+function viewMoney(){
+  const from=S.mFrom<=S.mTo?S.mFrom:S.mTo,to=S.mFrom<=S.mTo?S.mTo:S.mFrom;
+  const vs=S.visits.filter(v=>v.date>=from&&v.date<=to)
+    .sort((a,b)=>b.date.localeCompare(a.date));
+  let collected=0,discounts=0,priced=0;
+  for(const v of vs){const paid=paidAmount(v);
+    if(paid!=null){collected+=paid;discounts+=(+v.price)-paid;priced++;}}
+  collected=Math.round(collected*100)/100;discounts=Math.round(discounts*100)/100;
+  const chips=[["today","Today"],["7d","Last 7 days"],["month","This month"]].map(([k,l])=>
+    `<button class="chip ${S.mPreset===k?"on":""}" data-act="m-preset" data-id="${k}">${l}</button>`).join("");
+  const rows=vs.map(v=>{const c=clientById(v.clientId);const paid=paidAmount(v);
+    return`<div class="card tap visit" data-act="open-client" data-id="${c?c.id:""}">
+      <div class="vhead"><span class="vdate">${esc(fmtDate(v.date))}</span>
+        <span style="font-weight:700">${esc(c?c.name:"?")}</span>
+        ${v.discountPct?`<span class="badge b-line">-${v.discountPct}%</span>`:""}
+        <span class="vprice">${paid==null?"—":v.discountPct?`<s style="color:var(--muted);font-weight:400">${esc(fmtMoney(v.price))}</s> ${esc(fmtMoney(paid))}`:esc(fmtMoney(paid))}</span></div>
+      ${v.services?`<div class="vsvc" style="font-size:13px;color:var(--muted)">${esc(v.services)}</div>`:""}</div>`;}).join("");
+  return`<div class="topbar"><h1>Earnings</h1></div><main>
+  <div class="chips">${chips}</div>
+  <div class="kv" style="margin-bottom:12px">
+    <input id="m-from" type="date" value="${esc(from)}"><input id="m-to" type="date" value="${esc(to)}"></div>
+  <div class="stats">
+    <div class="stat"><div class="n">${vs.length}</div><div class="l">Visits</div></div>
+    <div class="stat"><div class="n">${esc(fmtMoney(collected))}</div><div class="l">Collected</div></div>
+    <div class="stat"><div class="n">${esc(fmtMoney(discounts))}</div><div class="l">Discounts given</div></div>
+  </div>
+  ${priced<vs.length?`<div class="hint" style="margin-bottom:10px">${vs.length-priced} visit${vs.length-priced>1?"s":""} in this period ha${vs.length-priced>1?"ve":"s"} no price entered — not counted.</div>`:""}
+  ${rows||`<div class="empty"><div class="big">💰</div>No visits in this period.</div>`}</main>`;}
 
 /* ---------------- Settings ---------------- */
 function viewSettings(){
@@ -581,8 +630,9 @@ function viewSettings(){
     <label>“Come back” message</label>
     <textarea id="set-m2">${esc(SET.msgComeback)}</textarea>
     <div class="hint">{name}, {date} and {time} are filled in automatically.</div>
-    <label>Service menu <span style="font-weight:400">(one per line — a line ending with “:” starts a group)</span></label>
+    <label>Service menu & prices <span style="font-weight:400">(one per line: Service = price · a line ending with “:” starts a group)</span></label>
     <textarea id="set-services" style="min-height:150px">${esc(SET.servicesTxt)}</textarea>
+    <div class="hint">The price fills in automatically when you pick the service on a visit. Leave a service without “= price” if it varies.</div>
     <div class="btnrow" style="margin-bottom:0"><button class="btn" data-act="save-settings">Save settings</button></div>
   </div>
   <div class="sect">Backup</div>
@@ -601,13 +651,14 @@ function openClient(id,fromAppt){S.openClientId=id;S.fromAppt=fromAppt||null;ren
 function closeClient(){$("#ov-client").classList.remove("open");S.openClientId=null;S.fromAppt=null;render();}
 function renderClient(){const c=clientById(S.openClientId);if(!c)return closeClient();
   const vs=visitsOf(c.id);
-  const total=vs.reduce((s,v)=>s+(+v.price||0),0);
+  const total=vs.reduce((s,v)=>s+(paidAmount(v)||0),0);
   const vHtml=vs.map(v=>{
+    const paid=paidAmount(v);
     const ph=(v.photoIds||[]).map(p=>`<div class="thumb" data-act="pv-open" data-id="${p}"><img data-photo="${p}" alt=""></div>`).join("");
     return`<div class="card tap visit" data-act="edit-visit" data-id="${v.id}">
       <div class="vhead"><span class="vdate">${esc(fmtDate(v.date))}</span>
         ${v.discountPct?`<span class="badge b-line">-${v.discountPct}%</span>`:""}
-        <span class="vprice">${esc(fmtMoney(v.price))}</span></div>
+        <span class="vprice">${v.discountPct&&paid!=null?`<s style="color:var(--muted);font-weight:400">${esc(fmtMoney(v.price))}</s> ${esc(fmtMoney(paid))}`:esc(fmtMoney(v.price))}</span></div>
       ${v.services?`<div class="vsvc">${esc(v.services)}</div>`:""}
       ${v.notes?`<div class="vnote">${esc(v.notes)}</div>`:""}
       ${ph?`<div class="thumbs">${ph}</div>`:""}</div>`;}).join("");
@@ -660,7 +711,7 @@ function renderVisitRead(v){const c=clientById(v.clientId);if(!c)return;
   <div class="card visit">
     <div class="vhead"><span class="vdate">${esc(fmtDate(v.date))}</span>
       ${v.discountPct?`<span class="badge b-line">-${v.discountPct}%</span>`:""}
-      <span class="vprice">${esc(fmtMoney(v.price))}</span></div>
+      <span class="vprice">${v.discountPct&&paidAmount(v)!=null?`<s style="color:var(--muted);font-weight:400">${esc(fmtMoney(v.price))}</s> ${esc(fmtMoney(paidAmount(v)))}`:esc(fmtMoney(v.price))}</span></div>
     ${v.services?`<div class="vsvc">${esc(v.services)}</div>`:""}
     ${v.notes?`<div class="vnote">${esc(v.notes)}</div>`:""}
     ${ph?`<div class="thumbs">${ph}</div>`:""}
@@ -674,6 +725,7 @@ function openVisit(clientId,visitId){const c=clientById(clientId);if(!c)return;
   const isNew=!v;
   v=v?{...v,photoIds:[...(v.photoIds||[])]}:{id:uid(),clientId,date:(S.fromAppt&&S.fromAppt.date)||todayISO(),
     services:(S.fromAppt&&S.fromAppt.service)||"",price:"",discountPct:c.discountOn?(c.discountPct||0):0,notes:"",photoIds:[]};
+  if(!visitId&&v.services&&v.price===""){const sp=servicePrice(splitService(v.services).sel);if(sp!=null)v.price=sp;}
   S.editVisit={v,isNew,newPhotoIds:[]};
   renderVisit();$("#ov-visit").classList.add("open");window.scrollTo(0,0);}
 function renderVisit(){const{v,isNew}=S.editVisit;const c=clientById(v.clientId);
@@ -688,10 +740,10 @@ function renderVisit(){const{v,isNew}=S.editVisit;const c=clientById(v.clientId)
     <label>Date</label><input id="v-date" type="date" value="${esc(v.date)}">
     <label>Service (from your menu)</label><select id="v-svc-sel">${serviceOptionsHTML(sv.sel)}</select>
     <label>Custom / special request</label><input id="v-svc-custom" placeholder="e.g. chrome ombré, extra length" value="${esc(sv.custom)}">
-    <div class="kv"><div><label>Price ${SET.currency?`(${esc(SET.currency)})`:""}</label>
+    <div class="kv"><div><label>Full price ${SET.currency?`(${esc(SET.currency)})`:""}</label>
       <input id="v-price" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(v.price)}"></div>
     <div><label>Discount %</label><input id="v-disc" type="number" inputmode="numeric" min="0" max="100" value="${esc(v.discountPct||0)}"></div></div>
-    <div class="hint" id="v-final"></div>
+    <div class="note" id="v-final" style="margin-top:10px"></div>
     <label>Notes for this visit</label>
     <textarea id="v-notes" placeholder="Color used, shape, anything to remember…">${esc(v.notes)}</textarea>
     <label>Request for next visit 📌 <span style="font-weight:400">(saves to her card)</span></label>
@@ -707,7 +759,12 @@ function renderVisit(){const{v,isNew}=S.editVisit;const c=clientById(v.clientId)
   $("#v-price").addEventListener("input",updFinal);$("#v-disc").addEventListener("input",updFinal);}
 function updFinal(){const p=+($("#v-price")?.value||0),d=+($("#v-disc")?.value||0);
   const el=$("#v-final");if(!el)return;
-  el.textContent=p&&d?`After ${d}% discount: ${fmtMoney(p*(1-d/100))} (enter the price before discount)`:"";}
+  if(!p){el.style.display="none";el.innerHTML="";return;}
+  el.style.display="";
+  const paid=Math.round(p*(1-d/100)*100)/100;
+  el.innerHTML=d>0
+    ?`Full price <s>${esc(fmtMoney(p))}</s> &nbsp;−&nbsp;${d}% discount &nbsp;→&nbsp; <b>she pays ${esc(fmtMoney(paid))}</b>`
+    :`<b>She pays ${esc(fmtMoney(p))}</b>`;}
 async function closeVisit(discard){const ev=S.editVisit;if(!ev)return;
   if(discard)for(const id of ev.newPhotoIds){await dbDel("photos",id);const u=S.photoURLs.get(id);if(u){URL.revokeObjectURL(u);S.photoURLs.delete(id);}}
   S.editVisit=null;$("#ov-visit").classList.remove("open");
@@ -926,6 +983,11 @@ document.addEventListener("click",async e=>{
     case"tab":S.view=b.dataset.id;render();window.scrollTo(0,0);break;
     case"day":S.selDate=b.dataset.d;render();break;
     case"wc-day":S.selDate=b.dataset.d;$("#ov-cal").classList.remove("open");render();break;
+    case"m-preset":{const t=todayISO();S.mPreset=b.dataset.id;
+      if(S.mPreset==="today"){S.mFrom=t;S.mTo=t;}
+      else if(S.mPreset==="7d"){S.mFrom=addDaysISO(t,-6);S.mTo=t;}
+      else{S.mFrom=t.slice(0,8)+"01";S.mTo=t;}
+      render();break;}
     case"cal-open":$("#ov-cal-in").innerHTML=`<div class="ovbar"><button class="iconbtn" data-act="cal-close">‹</button><h2>Week at a glance</h2></div><div class="wc-scroll">${weekCalHTML()}</div>`;
       $("#ov-cal").classList.add("open");window.scrollTo(0,0);break;
     case"cal-close":$("#ov-cal").classList.remove("open");break;
@@ -1068,7 +1130,7 @@ document.addEventListener("click",async e=>{
       SET.sheetUrl=$("#set-sheet").value.trim();SET.sheetTab=$("#set-tab").value.trim();
       SET.artist=$("#set-artist").value.trim();
       SET.currency=$("#set-cur").value.trim();SET.waCC=$("#set-cc").value.replace(/\D/g,"");
-      SET.confirmDays=+$("#set-cd").value||3;SET.dayFirst=$("#set-df").value==="1";
+      SET.confirmDays=+$("#set-cd").value||1;SET.dayFirst=$("#set-df").value==="1";
       SET.msgConfirm=$("#set-m1").value;SET.msgComeback=$("#set-m2").value;
       SET.servicesTxt=$("#set-services").value;
       saveSet();toast("Settings saved ✓");break;}
@@ -1086,6 +1148,11 @@ document.addEventListener("click",async e=>{
 
 document.addEventListener("change",async e=>{
   const t=e.target;
+  if(t.id==="v-svc-sel"){const p=servicePrice(t.value);
+    if(p!=null&&$("#v-price")){$("#v-price").value=p;updFinal();}}
+  if(t.id==="m-from"||t.id==="m-to"){
+    if(t.id==="m-from")S.mFrom=t.value||S.mFrom;else S.mTo=t.value||S.mTo;
+    S.mPreset="";render();}
   if(t.id==="file-csv"&&t.files[0]){beginImport(parseDSV(await t.files[0].text()));t.value="";}
   if(t.id==="file-restore"&&t.files[0]){await restoreBackup(t.files[0]);t.value="";}
   if(t.id==="file-photo"&&t.files.length){
