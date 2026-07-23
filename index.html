@@ -734,7 +734,10 @@ document.addEventListener("click",async e=>{
   switch(act){
     case"tab":S.view=b.dataset.id;render();window.scrollTo(0,0);break;
     case"day":S.selDate=b.dataset.d;render();break;
-    case"sync":case"sync-fetch":await syncFetch();break;
+    case"sync":case"sync-fetch":{
+      if($("#set-sheet")){SET.sheetUrl=$("#set-sheet").value.trim();
+        SET.sheetTab=$("#set-tab").value.trim();SET.artist=$("#set-artist").value.trim();saveSet();}
+      await syncFetch();break;}
     case"sync-paste":openImport(false);break;
     case"close-import":$("#ov-import").classList.remove("open");break;
     case"paste-go":{const txt=$("#paste-box").value;if(!txt.trim()){toast("Paste the schedule first");break;}
