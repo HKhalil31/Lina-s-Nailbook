@@ -438,6 +438,9 @@ function waNumber(phone){let p=String(phone||"").replace(/\D/g,"");
   if(p.startsWith("0"))p=(SET.waCC||"")+p.slice(1);return p;}
 function waLink(phone,msg){const n=waNumber(phone);if(!n)return"";
   return`https://wa.me/${n}${msg?"?text="+encodeURIComponent(msg):""}`;}
+function openWA(url){if(!url)return;
+  const a=document.createElement("a");a.href=url;a.target="_blank";a.rel="noopener";
+  document.body.appendChild(a);a.click();a.remove();}
 function fillTpl(t,a){return String(t||"").replace(/\{name\}/g,a.name||"").replace(/\{date\}/g,a.date||"").replace(/\{time\}/g,a.time||"");}
 function durLabel(m){m=+m||0;return m<60?`${m} min`:`${Math.floor(m/60)} h${m%60?` ${m%60}`:""}`;}
 function fmtMin(mins){const h=Math.floor(mins/60)%24,mi=Math.round(mins%60);
@@ -479,7 +482,8 @@ function apptCard(a){const c=clientByKey(a.key);
     ${a.service?`<div class="svc">${esc(a.service)}</div>`:""}
     ${extras.length?`<div class="extra">${extras.map(x=>`<span>${x}</span>`).join("")}</div>`:""}</div>
     ${c&&c.phone?`<a class="wa" data-act="wa" href="${esc(waLink(c.phone,""))}" target="_blank" rel="noopener" aria-label="WhatsApp ${esc(c.name)}">💬</a>`:""}
-    ${a.status!=="done"&&a.status!=="cancelled"?`<button class="chev" data-act="close-appt-btn" data-id="${a.id}" aria-label="Close appointment" title="Close — log visit & payment" style="font-size:16px;padding:8px 2px">🧾</button>`:""}
+    ${a.status!=="done"&&a.status!=="cancelled"?`<button class="chev" data-act="close-appt-btn" data-id="${a.id}" aria-label="Close appointment" title="Close — log visit & payment" style="font-size:16px;padding:8px 2px">🧾</button>`:
+      a.status==="done"?`<button class="chev" data-act="receipt-appt" data-id="${a.id}" aria-label="Send receipt" title="Send receipt on WhatsApp" style="font-size:16px;padding:8px 2px">🧾</button>`:""}
     <button class="chev" data-act="edit-appt" data-id="${a.id}" aria-label="Edit appointment" style="font-size:17px;padding:8px 2px">✎</button></div>`;}
 function weekGridHTML(start){
   const START=9,END=21,H=40,t0=todayISO();
@@ -1165,7 +1169,15 @@ document.addEventListener("click",async e=>{
       else{v=S.visits.find(x=>x.id===S.readVisitId);c=v&&clientById(v.clientId);}
       if(!v||!c)break;
       if(!c.phone){toast("Add her phone number first");break;}
-      window.open(waLink(c.phone,receiptText(v,c)),"_blank");break;}
+      openWA(waLink(c.phone,receiptText(v,c)));break;}
+    case"receipt-appt":{const a=S.appts.find(x=>x.id===id);if(!a)break;
+      const c=clientByKey(a.key);
+      if(!c){toast("No client card for this appointment");break;}
+      if(!c.phone){toast("Add her phone number first (open her card)");break;}
+      const vv=S.visits.filter(x=>x.clientId===c.id&&x.date===a.date).sort((x,y)=>(y.id>x.id?1:-1))[0]
+        ||S.visits.filter(x=>x.clientId===c.id).sort((x,y)=>(y.date||"").localeCompare(x.date||""))[0];
+      if(!vv){toast("No visit logged for this appointment yet");break;}
+      openWA(waLink(c.phone,receiptText(vv,c)));break;}
     case"save-visit":{const ev=S.editVisit;if(!ev)break;const v=ev.v;
       const prevV=ev.isNew?null:S.visits.find(x=>x.id===v.id);
       v.date=$("#v-date").value||todayISO();
@@ -1195,9 +1207,10 @@ document.addEventListener("click",async e=>{
       delete v._bookedApptId;
       ev.newPhotoIds=[];await closeVisit(false);render();
       toast(booked?`Visit saved + next appointment booked ✓`:"Visit saved ✓");
-      if(ev.isNew&&c&&c.phone&&paidAmount(v)!=null)
-        askConfirm(`Send ${c.name.split(" ")[0]} her receipt on WhatsApp?`,
-          async()=>{window.open(waLink(c.phone,receiptText(v,c)),"_blank");});
+      if(ev.isNew&&c&&paidAmount(v)!=null){
+        if(c.phone)askConfirm(`Send ${c.name.split(" ")[0]} her receipt on WhatsApp?`,
+          async()=>{openWA(waLink(c.phone,receiptText(v,c)));});
+        else setTimeout(()=>toast("No phone saved — add it on her card to send receipts"),2400);}
       break;}
     case"del-visit":{const ev=S.editVisit;if(!ev||ev.isNew)break;
       if(!confirm("Delete this visit?"))break;
