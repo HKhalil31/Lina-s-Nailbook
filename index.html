@@ -715,9 +715,9 @@ function shrinkImage(file){return new Promise((res,rej)=>{
 /* ---------------- appointment editor ---------------- */
 function renderNameSugg(q){const box=$("#a-sugg");if(!box)return;
   const k=nameKey(q||"");
-  let list=S.clients.slice().sort((a,b)=>a.name.localeCompare(b.name));
-  if(k)list=list.filter(c=>c.key.includes(k));
-  const exact=k&&S.clients.some(c=>c.key===k);
+  if(!k){box.innerHTML="";return;}
+  const exact=S.clients.some(c=>c.key===k);
+  const list=S.clients.filter(c=>c.key.includes(k)).sort((a,b)=>a.name.localeCompare(b.name));
   box.innerHTML=exact?"":list.slice(0,6).map(c=>
     `<button class="suggitem" data-act="a-pick" data-id="${c.id}">${esc(c.name)}${c.phone?` <span>📞 ${esc(c.phone)}</span>`:""}</button>`).join("");}
 function openAppt(id,pre){
@@ -733,7 +733,7 @@ function renderAppt(){const a=S.editAppt;
     <h2>${S.editApptIsNew?"New appointment":"Edit appointment"}</h2>
     ${S.editApptIsNew?"":`<button class="iconbtn" data-act="del-appt" title="Delete appointment">🗑</button>`}</div>
   <div class="card">
-    <label>Client name</label><input id="a-name" autocomplete="off" placeholder="type, or pick below" value="${esc(a.name)}">
+    <label>Client name</label><input id="a-name" autocomplete="off" placeholder="start typing — saved clients will appear" value="${esc(a.name)}">
     <div id="a-sugg" class="sugg"></div>
     <label>Date</label><input id="a-date" type="date" value="${esc(a.date)}">
     <div class="kv"><div><label>Time</label><input id="a-time" placeholder="e.g. 3:30 PM" value="${esc(a.time)}"></div>
