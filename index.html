@@ -254,6 +254,13 @@ pre.paste-eg{background:var(--surface);border:1.5px solid var(--line);border-rad
     <div class="btnrow" style="margin:0"><button class="btn" data-act="ask-yes">Yes</button>
     <button class="btn sec" data-act="ask-no">No</button></div>
   </div></div>
+<div id="rcbox" style="position:fixed;inset:0;z-index:28;display:none;align-items:center;justify-content:center;background:rgba(20,10,16,.5);padding:20px">
+  <div class="card" style="max-width:340px;width:100%;margin:0">
+    <div style="font-weight:700;margin-bottom:12px">Send receipt — <span id="rc-name"></span></div>
+    <button class="btn wide" data-act="rc-img" style="margin-bottom:8px">🖼 Styled image receipt</button>
+    <button class="btn sec wide" data-act="rc-text" style="margin-bottom:8px">💬 Text message</button>
+    <button class="btn sec wide" data-act="rc-cancel">Cancel</button>
+  </div></div>
 <div id="toast"></div>
 
 <script>
@@ -344,16 +351,74 @@ function paidAmount(v){if(v.price===""||v.price==null)return null;
 function receiptText(v,c){
   const d=new Date(v.date+"T12:00:00");
   const abs=isNaN(d)?v.date:`${d.getDate()} ${MON[d.getMonth()]} ${d.getFullYear()}`;
-  const lines=[`🧾 ${SET.salonName||"Receipt"}`,`${c.name} — ${abs}`,""];
+  const lines=[`🧾 *${SET.salonName||"Receipt"}*`,`${c.name} — ${abs}`,""];
   if(v.services)lines.push(`Service: ${v.services}`);
   const paid=paidAmount(v);
   if(paid!=null){
     if(+v.discountPct){lines.push(`Price: ${fmtMoney(v.price)}`,
       `Discount ${v.discountPct}%: −${fmtMoney(Math.round(((+v.price)-paid)*100)/100)}`,
-      `Total paid: ${fmtMoney(paid)}`);}
-    else lines.push(`Total paid: ${fmtMoney(paid)}`);}
+      `*Total paid: ${fmtMoney(paid)}*`);}
+    else lines.push(`*Total paid: ${fmtMoney(paid)}*`);}
   lines.push("","Thank you! See you next time 💅");
   return lines.join("\n");}
+function rr(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+async function makeReceiptImage(v,c){
+  const W=720,P=48,headH=150;
+  const cv=document.createElement("canvas");const ctx=cv.getContext("2d");
+  const F=s=>`${s}px -apple-system,'Segoe UI',Roboto,sans-serif`;
+  ctx.font="600 "+F(28);
+  const svcLines=[];
+  if(v.services){let line="";
+    for(const w of String(v.services).split(/\s+/)){const t=line?line+" "+w:w;
+      if(ctx.measureText(t).width>W-2*P&&line){svcLines.push(line);line=w;}else line=t;}
+    if(line)svcLines.push(line);}
+  const paid=paidAmount(v);
+  const priceRows=[];
+  if(paid!=null&&+v.discountPct){priceRows.push(["Price",fmtMoney(v.price)]);
+    priceRows.push([`Discount ${v.discountPct}%`,"−"+fmtMoney(Math.round(((+v.price)-paid)*100)/100)]);}
+  const flowH=52+26+16+40+36*svcLines.length+(priceRows.length?8+40*priceRows.length:0)+(paid!=null?14+56:0);
+  const H=headH+flowH+95;
+  cv.width=W*2;cv.height=H*2;ctx.scale(2,2);
+  ctx.fillStyle="#FBF8F7";ctx.fillRect(0,0,W,H);
+  ctx.fillStyle="#FFFFFF";rr(ctx,10,10,W-20,H-20,24);ctx.fill();
+  ctx.strokeStyle="#93355C";ctx.lineWidth=5;rr(ctx,10,10,W-20,H-20,24);ctx.stroke();
+  ctx.save();rr(ctx,10,10,W-20,headH-10,24);ctx.clip();
+  ctx.fillStyle="#93355C";ctx.fillRect(10,10,W-20,headH);ctx.restore();
+  ctx.fillStyle="#FFFFFF";ctx.beginPath();ctx.arc(P+42,headH/2+2,44,0,7);ctx.fill();
+  let logo=null;try{logo=await dbGet("photos","receipt-logo");}catch(e){}
+  let drewLogo=false;
+  if(logo&&logo.blob){
+    const img=await new Promise(res=>{const i=new Image();i.onload=()=>res(i);i.onerror=()=>res(null);i.src=URL.createObjectURL(logo.blob);});
+    if(img){ctx.save();ctx.beginPath();ctx.arc(P+42,headH/2+2,40,0,7);ctx.clip();
+      ctx.drawImage(img,P+2,headH/2-38,80,80);ctx.restore();drewLogo=true;}}
+  if(!drewLogo){ctx.font=F(44);ctx.textAlign="center";ctx.textBaseline="middle";
+    ctx.fillText("💅",P+42,headH/2+4);ctx.textBaseline="alphabetic";}
+  ctx.fillStyle="#FFFFFF";ctx.textAlign="left";
+  ctx.font="800 "+F(36);ctx.fillText(SET.salonName||"Receipt",P+106,headH/2-4);
+  ctx.font=F(22);ctx.globalAlpha=.85;ctx.fillText("Receipt",P+106,headH/2+28);ctx.globalAlpha=1;
+  let y=headH+52;
+  ctx.fillStyle="#2A2126";ctx.font="700 "+F(30);ctx.fillText(c.name,P,y);
+  const d=new Date(v.date+"T12:00:00");
+  const abs=isNaN(d)?v.date:`${d.getDate()} ${MON[d.getMonth()]} ${d.getFullYear()}`;
+  ctx.fillStyle="#7C6B75";ctx.font=F(24);ctx.textAlign="right";ctx.fillText(abs,W-P,y);ctx.textAlign="left";
+  y+=26+16;
+  ctx.strokeStyle="#EADCE2";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(P,y);ctx.lineTo(W-P,y);ctx.stroke();
+  y+=40;
+  ctx.fillStyle="#2A2126";ctx.font="600 "+F(28);
+  for(const l of svcLines){ctx.fillText(l,P,y);y+=36;}
+  if(priceRows.length){y+=8;
+    for(const[k,val]of priceRows){ctx.fillStyle="#7C6B75";ctx.font=F(26);ctx.fillText(k,P,y);
+      ctx.textAlign="right";ctx.fillStyle="#2A2126";ctx.font="600 "+F(26);ctx.fillText(val,W-P,y);
+      ctx.textAlign="left";y+=40;}}
+  if(paid!=null){y+=14;
+    ctx.fillStyle="#93355C";ctx.font="800 "+F(34);ctx.fillText("Total paid",P,y+14);
+    ctx.textAlign="right";ctx.fillText(fmtMoney(paid),W-P,y+14);ctx.textAlign="left";y+=56;}
+  ctx.fillStyle="#7C6B75";ctx.font=F(24);ctx.textAlign="center";
+  ctx.fillText("Thank you! See you next time 💅",W/2,H-46);ctx.textAlign="left";
+  return new Promise(res=>cv.toBlob(res,"image/png"));}
+function openReceiptChooser(v,c){S._receipt={v,c};
+  $("#rc-name").textContent=c.name;$("#rcbox").style.display="flex";}
 function joinService(sel,custom){sel=String(sel||"").trim();custom=String(custom||"").trim();
   return sel&&custom?sel+" + "+custom:(sel||custom);}
 
@@ -671,6 +736,10 @@ function viewSettings(){
   <div class="card">
     <label>Salon name (shown on receipts)</label>
     <input id="set-salon" value="${esc(SET.salonName||"")}">
+    <label>Receipt logo <span style="font-weight:400">(shown on image receipts — 💅 until you add one)</span></label>
+    <div class="btnrow" style="margin-bottom:0"><button class="btn sec" data-act="logo-pick">🖼 Choose logo</button>
+    <button class="btn sec" data-act="logo-clear">Remove logo</button></div>
+    <input type="file" id="file-logo" accept="image/*" hidden>
     <div class="kv"><div><label>Currency</label><select id="set-cur">
       ${["USD","LBP"].map(x=>`<option ${SET.currency===x?"selected":""}>${x}</option>`).join("")}
       ${["USD","LBP"].includes(SET.currency)?"":`<option selected>${esc(SET.currency)}</option>`}</select></div>
@@ -1168,16 +1237,31 @@ document.addEventListener("click",async e=>{
         discountPct:+($("#v-disc").value||0)||0};c=clientById(v.clientId);}
       else{v=S.visits.find(x=>x.id===S.readVisitId);c=v&&clientById(v.clientId);}
       if(!v||!c)break;
-      if(!c.phone){toast("Add her phone number first");break;}
-      openWA(waLink(c.phone,receiptText(v,c)));break;}
+      openReceiptChooser(v,c);break;}
     case"receipt-appt":{const a=S.appts.find(x=>x.id===id);if(!a)break;
       const c=clientByKey(a.key);
       if(!c){toast("No client card for this appointment");break;}
-      if(!c.phone){toast("Add her phone number first (open her card)");break;}
       const vv=S.visits.filter(x=>x.clientId===c.id&&x.date===a.date).sort((x,y)=>(y.id>x.id?1:-1))[0]
         ||S.visits.filter(x=>x.clientId===c.id).sort((x,y)=>(y.date||"").localeCompare(x.date||""))[0];
       if(!vv){toast("No visit logged for this appointment yet");break;}
-      openWA(waLink(c.phone,receiptText(vv,c)));break;}
+      openReceiptChooser(vv,c);break;}
+    case"rc-cancel":$("#rcbox").style.display="none";S._receipt=null;break;
+    case"rc-text":{const rc=S._receipt;$("#rcbox").style.display="none";if(!rc)break;
+      if(!rc.c.phone){toast("Add her phone number first (open her card)");break;}
+      openWA(waLink(rc.c.phone,receiptText(rc.v,rc.c)));S._receipt=null;break;}
+    case"rc-img":{const rc=S._receipt;$("#rcbox").style.display="none";if(!rc)break;
+      toast("Preparing receipt…");
+      try{
+        const blob=await makeReceiptImage(rc.v,rc.c);
+        const file=new File([blob],`receipt-${rc.v.date}.png`,{type:"image/png"});
+        if(navigator.canShare&&navigator.canShare({files:[file]})){
+          try{await navigator.share({files:[file],title:"Receipt"});}catch(e){/*viewer cancelled*/}}
+        else{const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+          a.download=file.name;document.body.appendChild(a);a.click();a.remove();
+          toast("Image downloaded — attach it in her WhatsApp chat");
+          if(rc.c.phone)openWA(waLink(rc.c.phone,""));}
+      }catch(e){toast("Couldn't build the image — try the text receipt");}
+      S._receipt=null;break;}
     case"save-visit":{const ev=S.editVisit;if(!ev)break;const v=ev.v;
       const prevV=ev.isNew?null:S.visits.find(x=>x.id===v.id);
       v.date=$("#v-date").value||todayISO();
@@ -1207,10 +1291,7 @@ document.addEventListener("click",async e=>{
       delete v._bookedApptId;
       ev.newPhotoIds=[];await closeVisit(false);render();
       toast(booked?`Visit saved + next appointment booked ✓`:"Visit saved ✓");
-      if(ev.isNew&&c&&paidAmount(v)!=null){
-        if(c.phone)askConfirm(`Send ${c.name.split(" ")[0]} her receipt on WhatsApp?`,
-          async()=>{openWA(waLink(c.phone,receiptText(v,c)));});
-        else setTimeout(()=>toast("No phone saved — add it on her card to send receipts"),2400);}
+      if(ev.isNew&&c&&paidAmount(v)!=null)openReceiptChooser({...v},c);
       break;}
     case"del-visit":{const ev=S.editVisit;if(!ev||ev.isNew)break;
       if(!confirm("Delete this visit?"))break;
@@ -1252,6 +1333,8 @@ document.addEventListener("click",async e=>{
       if($("#set-sheet")){SET.sheetUrl=$("#set-sheet").value.trim();saveSet();}
       await exportBackup();break;}
     case"import-backup":$("#file-restore").click();break;
+    case"logo-pick":$("#file-logo").click();break;
+    case"logo-clear":await dbDel("photos","receipt-logo");toast("Logo removed — receipts show 💅 again");break;
     case"wipe":{if(!confirm("Delete ALL clients, visits, photos and appointments from this device?"))break;
       if(!confirm("Really sure? There is no undo. (Export a backup first!)"))break;
       for(const st of["clients","visits","photos","appts"])await dbClearStore(st);
@@ -1267,6 +1350,11 @@ document.addEventListener("change",async e=>{
     S.mPreset="";render();}
   if(t.id==="file-csv"&&t.files[0]){beginImport(parseDSV(await t.files[0].text()));t.value="";}
   if(t.id==="file-restore"&&t.files[0]){await restoreBackup(t.files[0]);t.value="";}
+  if(t.id==="file-logo"&&t.files[0]){
+    try{const blob=await shrinkImage(t.files[0]);
+      await dbPut("photos",{id:"receipt-logo",blob});toast("Logo saved — it will appear on image receipts ✓");}
+    catch(e){toast("Couldn't read that image");}
+    t.value="";}
   if(t.id==="file-photo"&&t.files.length){
     const ev=S.editVisit;if(!ev)return;
     toast("Adding photo…");
