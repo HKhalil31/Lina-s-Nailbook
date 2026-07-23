@@ -62,6 +62,9 @@ main{flex:1;padding:0 16px 90px}
   width:40px;height:40px;border-radius:12px;background:var(--surface);border:1.5px solid var(--line);
   display:inline-flex;align-items:center;justify-content:center;font-size:18px;flex:none;box-shadow:var(--shadow);
 }
+a.wa{width:38px;height:38px;border-radius:50%;background:var(--good-soft);border:0;
+  display:inline-flex;align-items:center;justify-content:center;font-size:17px;flex:none;
+  text-decoration:none;align-self:center}
 .tabbar{
   position:fixed;bottom:0;left:0;right:0;z-index:6;
   background:var(--surface);border-top:1.5px solid var(--line);
@@ -307,9 +310,9 @@ function joinService(sel,custom){sel=String(sel||"").trim();custom=String(custom
 /* ---------------- indexedDB ---------------- */
 let _db=null;
 function db(){return new Promise((res,rej)=>{if(_db)return res(_db);
-  const q=indexedDB.open("nailbook",1);
+  const q=indexedDB.open("nailbook",2);
   q.onupgradeneeded=e=>{const d=e.target.result;
-    for(const s of["clients","visits","photos","appts"])if(!d.objectStoreNames.contains(s))d.createObjectStore(s,{keyPath:"id"});};
+    for(const s of["clients","visits","photos","appts","log"])if(!d.objectStoreNames.contains(s))d.createObjectStore(s,{keyPath:"id"});};
   q.onsuccess=()=>{_db=q.result;res(_db)};q.onerror=()=>rej(q.error);});}
 async function dbPut(st,v){const d=await db();return new Promise((res,rej)=>{const t=d.transaction(st,"readwrite");t.objectStore(st).put(v);t.oncomplete=res;t.onerror=()=>rej(t.error);});}
 async function dbDel(st,k){const d=await db();return new Promise((res,rej)=>{const t=d.transaction(st,"readwrite");t.objectStore(st).delete(k);t.oncomplete=res;t.onerror=()=>rej(t.error);});}
@@ -318,9 +321,49 @@ async function dbAll(st){const d=await db();return new Promise((res,rej)=>{const
 async function dbGet(st,k){const d=await db();return new Promise((res,rej)=>{const r=d.transaction(st).objectStore(st).get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
 
 /* ---------------- state ---------------- */
-const S={view:"today",selDate:todayISO(),clients:[],visits:[],appts:[],search:"",
+const S={view:"today",selDate:todayISO(),clients:[],visits:[],appts:[],search:"",log:[],
   openClientId:null,fromAppt:null,editVisit:null,importRows:null,photoURLs:new Map()};
-async function loadAll(){[S.clients,S.visits,S.appts]=await Promise.all([dbAll("clients"),dbAll("visits"),dbAll("appts")]);}
+async function loadAll(){[S.clients,S.visits,S.appts,S.log]=await Promise.all([dbAll("clients"),dbAll("visits"),dbAll("appts"),dbAll("log")]);
+  S.log.sort((a,b)=>b.ts-a.ts);S.log=S.log.slice(0,3);}
+
+/* ---------------- change log & undo ---------------- */
+async function logAdd(label,undo){
+  const e={id:uid(),ts:Date.now(),label,undo};
+  S.log.unshift(e);
+  while(S.log.length>3){const old=S.log.pop();await dbDel("log",old.id);}
+  await dbPut("log",e);}
+function logTime(ts){const d=new Date(ts);
+  return`${fmtDate(isoOf(d.getFullYear(),d.getMonth()+1,d.getDate()))} ${pad(d.getHours())}:${pad(d.getMinutes())}`;}
+async function doUndo(id){
+  const e=S.log.find(x=>x.id===id);if(!e)return;const u=e.undo;
+  try{
+    switch(u.kind){
+      case"client-restore":await dbPut("clients",u.client);break;
+      case"client-delete":{
+        for(const v of S.visits.filter(v=>v.clientId===u.id)){
+          for(const p of v.photoIds||[])await dbDel("photos",p);await dbDel("visits",v.id);}
+        await dbDel("clients",u.id);break;}
+      case"client-full-restore":{await dbPut("clients",u.client);
+        for(const v of u.visits||[])await dbPut("visits",v);
+        for(const p of u.photos||[])await dbPut("photos",p);break;}
+      case"visit-restore":await dbPut("visits",u.visit);break;
+      case"visit-full-restore":{await dbPut("visits",u.visit);
+        for(const p of u.photos||[])await dbPut("photos",p);break;}
+      case"visit-delete":{for(const p of u.photoIds||[])await dbDel("photos",p);
+        await dbDel("visits",u.id);
+        if(u.apptId)await dbDel("appts",u.apptId);break;}
+      case"appt-restore":{await dbPut("appts",u.appt);
+        if(u.untomb){SET.hiddenAppts=(SET.hiddenAppts||[]).filter(h=>h!==u.untomb);saveSet();}break;}
+      case"appt-delete":await dbDel("appts",u.id);break;
+      case"appts-replace":{await dbClearStore("appts");
+        for(const a of u.appts||[])await dbPut("appts",a);break;}
+      default:toast("This change can't be undone");return;
+    }
+    await dbDel("log",e.id);
+    await loadAll();
+    if(S.openClientId)renderClient();
+    render();toast("Undone ✓");
+  }catch(err){toast("Couldn't undo that");}}
 function clientByKey(key){if(!key)return null;
   let c=S.clients.find(c=>c.key===key);if(c)return c;
   const cands=S.clients.filter(c=>c.key&&(c.key.startsWith(key+" ")||key.startsWith(c.key+" ")));
@@ -374,6 +417,7 @@ function apptCard(a){const c=clientByKey(a.key);
     <div class="who"><div class="name">${esc(a.name)} ${badges.join(" ")}</div>
     ${a.service?`<div class="svc">${esc(a.service)}</div>`:""}
     ${extras.length?`<div class="extra">${extras.map(x=>`<span>${x}</span>`).join("")}</div>`:""}</div>
+    ${c&&c.phone?`<a class="wa" data-act="wa" href="${esc(waLink(c.phone,""))}" target="_blank" rel="noopener" aria-label="WhatsApp ${esc(c.name)}">💬</a>`:""}
     <button class="chev" data-act="edit-appt" data-id="${a.id}" aria-label="Edit appointment" style="font-size:17px;padding:8px 2px">✎</button></div>`;}
 function weekGridHTML(start){
   const START=9,END=21,H=30,t0=todayISO();
@@ -438,7 +482,9 @@ function clientRow(c){const lv=lastVisit(c.id);const n=visitsOf(c.id).length;
     <div style="flex:1;min-width:0"><div style="font-weight:700">${esc(c.name)}
       ${c.discountOn?`<span class="badge b-line">${c.discountPct||0}%</span>`:""}
       ${due?`<span class="badge b-warn">due back</span>`:""}</div>
-    <div class="meta">${meta.join(" ")}</div></div><div class="chev">›</div></div>`;}
+    <div class="meta">${meta.join(" ")}</div></div>
+    ${c.phone?`<a class="wa" data-act="wa" href="${esc(waLink(c.phone,""))}" target="_blank" rel="noopener" aria-label="WhatsApp ${esc(c.name)}">💬</a>`:""}
+    <div class="chev">›</div></div>`;}
 function viewClients(){
   const q=nameKey(S.search);
   const list=S.clients.filter(c=>!q||c.key.includes(q)||String(c.phone||"").includes(S.search.trim()))
@@ -487,6 +533,14 @@ function viewCare(){
 /* ---------------- Settings ---------------- */
 function viewSettings(){
   return`<div class="topbar"><h1>Settings</h1></div><main>
+  <div class="sect">Recent changes</div>
+  <div class="card">
+    ${S.log.length?S.log.map(e=>`<div class="switch"><div style="min-width:0;flex:1">
+      <div class="lab" style="font-size:14px">${esc(e.label)}</div>
+      <div class="sub">${esc(logTime(e.ts))}</div></div>
+      <button class="btn sm sec" data-act="undo" data-id="${e.id}">↺ Undo</button></div>`).join(""):
+    `<div class="hint">Your last 3 changes (appointments, clients, visits, imports) will appear here, each with an Undo button.</div>`}
+  </div>
   <div class="sect">Schedule source</div>
   <div class="card">
     <label>Google Sheet link</label>
@@ -756,6 +810,7 @@ async function doImport(){
       name,key,service:get(r,m.service),confirmed,status:cancelled?"cancelled":"",});
     if(!clientByKey(key))unknown.add(key);
     ok++;}
+  const prevAppts=S.appts.map(a=>({...a}));
   SET.hiddenAppts=(SET.hiddenAppts||[]).filter(h=>h.slice(0,10)>=addDaysISO(todayISO(),-30));saveSet();
   const hidden=new Set(SET.hiddenAppts);
   const manual=S.appts.filter(a=>a.src==="manual");
@@ -766,6 +821,7 @@ async function doImport(){
   const seen=new Set();
   for(const a of[...kept,...manual]){if(seen.has(a.id))continue;seen.add(a.id);await dbPut("appts",a);}
   S.appts=[...kept,...manual.filter(a=>!kept.some(k=>k.id===a.id))];
+  await logAdd(`Imported ${ok} appointments from the sheet`,{kind:"appts-replace",appts:prevAppts});
   const now=new Date();
   SET.lastSync=`${fmtDate(todayISO())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;saveSet();
   S.importRows=null;
@@ -813,6 +869,7 @@ async function newClient(name,then){
   const c={id:uid(),name:n,key:nameKey(n),phone:"",coffee:"",prefs:"",nextRequest:"",
     discountOn:false,discountPct:0,notifyBefore:false,reminderDate:"",reminderNote:"",createdAt:todayISO()};
   await dbPut("clients",c);S.clients.push(c);
+  await logAdd(`Added client — ${c.name}`,{kind:"client-delete",id:c.id});
   if(then)then(c);else{render();openClient(c.id);}}
 
 document.addEventListener("input",e=>{
@@ -860,11 +917,16 @@ document.addEventListener("click",async e=>{
       const upd={...a,src:"manual",name,key:nameKey(name),date:$("#a-date").value||todayISO(),
         time:t.disp,sort:t.sort,service:joinService($("#a-svc").value,$("#a-svc-custom").value),
         confirmed:st==="conf",status:st==="cancelled"?"cancelled":""};
+      const prevA=S.editApptIsNew?null:S.appts.find(x=>x.id===upd.id);
       await dbPut("appts",upd);
       const i=S.appts.findIndex(x=>x.id===upd.id);if(i>=0)S.appts[i]=upd;else S.appts.push(upd);
+      if(S.editApptIsNew)await logAdd(`Added appointment — ${name} (${fmtDate(upd.date)})`,{kind:"appt-delete",id:upd.id});
+      else if(prevA)await logAdd(`Edited appointment — ${name} (${fmtDate(upd.date)})`,{kind:"appt-restore",appt:{...prevA}});
       S.editAppt=null;$("#ov-appt").classList.remove("open");render();toast("Appointment saved ✓");break;}
     case"del-appt":{const a=S.editAppt;if(!a)break;
       if(!confirm(`Delete ${a.name||"this appointment"} on ${fmtDate(a.date)}?`))break;
+      await logAdd(`Deleted appointment — ${a.name} (${fmtDate(a.date)})`,
+        {kind:"appt-restore",appt:{...a},untomb:a.date+"|"+a.key});
       SET.hiddenAppts=[...(SET.hiddenAppts||[]),a.date+"|"+a.key];saveSet();
       await dbDel("appts",a.id);S.appts=S.appts.filter(x=>x.id!==a.id);
       S.editAppt=null;$("#ov-appt").classList.remove("open");render();toast("Appointment deleted");break;}
@@ -879,6 +941,7 @@ document.addEventListener("click",async e=>{
     case"open-client":openClient(id);break;
     case"close-client":closeClient();break;
     case"save-client":{const c=clientById(S.openClientId);if(!c)break;
+      await logAdd(`Edited details — ${c.name}`,{kind:"client-restore",client:{...c}});
       readClientForm(c);await dbPut("clients",c);renderClient();render();toast("Saved ✓");break;}
     case"tgl-discount":{const c=clientById(S.openClientId);if(!c)break;
       c.discountOn=!c.discountOn;b.classList.toggle("on",c.discountOn);
@@ -887,7 +950,11 @@ document.addEventListener("click",async e=>{
       c.notifyBefore=!c.notifyBefore;b.classList.toggle("on",c.notifyBefore);await dbPut("clients",c);break;}
     case"del-client":{const c=clientById(S.openClientId);if(!c)break;
       const vs=visitsOf(c.id);
-      if(!confirm(`Delete ${c.name}${vs.length?` and her ${vs.length} visit${vs.length>1?"s":""}`:""}? This cannot be undone.`))break;
+      if(!confirm(`Delete ${c.name}${vs.length?` and her ${vs.length} visit${vs.length>1?"s":""}`:""}?`))break;
+      const savedPhotos=[];
+      for(const v of vs)for(const p of v.photoIds||[]){const ph=await dbGet("photos",p);if(ph)savedPhotos.push(ph);}
+      await logAdd(`Deleted client — ${c.name}`,{kind:"client-full-restore",
+        client:{...c},visits:vs.map(v=>({...v,photoIds:[...(v.photoIds||[])]})),photos:savedPhotos});
       for(const v of vs){for(const p of v.photoIds||[])await dbDel("photos",p);await dbDel("visits",v.id);}
       await dbDel("clients",c.id);
       S.clients=S.clients.filter(x=>x.id!==c.id);S.visits=S.visits.filter(x=>x.clientId!==c.id);
@@ -897,6 +964,7 @@ document.addEventListener("click",async e=>{
     case"edit-visit":if(e.target.closest("[data-act='pv-open']"))break;openVisit(S.openClientId,id);break;
     case"cancel-visit":await closeVisit(true);break;
     case"save-visit":{const ev=S.editVisit;if(!ev)break;const v=ev.v;
+      const prevV=ev.isNew?null:S.visits.find(x=>x.id===v.id);
       v.date=$("#v-date").value||todayISO();
       v.services=joinService($("#v-svc-sel").value,$("#v-svc-custom").value);
       v.price=$("#v-price").value===""?"":+$("#v-price").value;
@@ -910,11 +978,20 @@ document.addEventListener("click",async e=>{
         if(bd){const bt=parseTime($("#v-bktime").value);
           const na={id:"man|"+uid(),src:"manual",date:bd,time:bt.disp,sort:bt.sort,
             name:c.name,key:c.key,service:c.nextRequest||"",confirmed:true,status:""};
-          await dbPut("appts",na);S.appts.push(na);booked=true;}}
+          await dbPut("appts",na);S.appts.push(na);booked=true;v._bookedApptId=na.id;}}
+      if(ev.isNew)await logAdd(`Added visit — ${c?c.name:""} (${fmtDate(v.date)})`,
+        {kind:"visit-delete",id:v.id,photoIds:[...(v.photoIds||[])],apptId:v._bookedApptId});
+      else if(prevV)await logAdd(`Edited visit — ${c?c.name:""} (${fmtDate(v.date)})`,
+        {kind:"visit-restore",visit:{...prevV,photoIds:[...(prevV.photoIds||[])]}});
+      delete v._bookedApptId;
       ev.newPhotoIds=[];await closeVisit(false);render();
       toast(booked?`Visit saved + next appointment booked ✓`:"Visit saved ✓");break;}
     case"del-visit":{const ev=S.editVisit;if(!ev||ev.isNew)break;
       if(!confirm("Delete this visit?"))break;
+      {const c=clientById(ev.v.clientId);const savedPh=[];
+      for(const p of ev.v.photoIds||[]){const ph=await dbGet("photos",p);if(ph)savedPh.push(ph);}
+      await logAdd(`Deleted visit — ${c?c.name:""} (${fmtDate(ev.v.date)})`,
+        {kind:"visit-full-restore",visit:{...ev.v,photoIds:[...(ev.v.photoIds||[])]},photos:savedPh});}
       for(const p of ev.v.photoIds||[])await dbDel("photos",p);
       await dbDel("visits",ev.v.id);S.visits=S.visits.filter(x=>x.id!==ev.v.id);
       ev.newPhotoIds=[];await closeVisit(false);render();toast("Visit deleted");break;}
@@ -927,10 +1004,15 @@ document.addEventListener("click",async e=>{
       if(u){$("#pv-img").src=u;$("#photoview").classList.add("open");}break;}
     case"pv-close":$("#photoview").classList.remove("open");break;
     case"remind-done":{const c=clientById(id);if(!c)break;
+      await logAdd(`Follow-up done — ${c.name}`,{kind:"client-restore",client:{...c}});
       c.reminderDate="";c.reminderNote="";await dbPut("clients",c);render();toast("Follow-up done ✓");break;}
     case"remind-snooze":{const c=clientById(id);if(!c)break;
+      await logAdd(`Snoozed follow-up — ${c.name}`,{kind:"client-restore",client:{...c}});
       c.reminderDate=addDaysISO(c.reminderDate<todayISO()?todayISO():c.reminderDate,7);
       await dbPut("clients",c);render();toast("Snoozed a week");break;}
+    case"undo":{const e=S.log.find(x=>x.id===id);if(!e)break;
+      if(!confirm(`Undo this change?\n\n${e.label}`))break;
+      await doUndo(id);break;}
     case"save-settings":{
       SET.sheetUrl=$("#set-sheet").value.trim();SET.sheetTab=$("#set-tab").value.trim();
       SET.artist=$("#set-artist").value.trim();
