@@ -226,6 +226,16 @@ pre.paste-eg{background:var(--surface);border:1.5px solid var(--line);border-rad
 
 <div class="ov" id="ov-client"><div class="inner" id="ov-client-in"></div></div>
 <div class="ov" id="ov-visit"><div class="inner" id="ov-visit-in"></div></div>
+<div class="ov" id="ov-new"><div class="inner">
+  <div class="ovbar"><button class="iconbtn" data-act="nc-cancel">‹</button><h2>New client</h2></div>
+  <div class="card">
+    <label>Name</label><input id="nc-name" autocomplete="off" placeholder="her full name">
+    <label>Phone <span style="font-weight:400">(optional — enables WhatsApp)</span></label>
+    <input id="nc-phone" type="tel" inputmode="tel" placeholder="03 …">
+    <div class="btnrow" style="margin-bottom:0">
+      <button class="btn" data-act="nc-create">＋ Create client</button>
+      <button class="btn sec" data-act="nc-cancel">Cancel</button></div>
+  </div></div></div>
 <div class="ov" id="ov-cal"><div class="inner" id="ov-cal-in"></div></div>
 <div class="ov" id="ov-appt"><div class="inner" id="ov-appt-in"></div></div>
 <div class="ov" id="ov-import"><div class="inner" id="ov-import-in"></div></div>
@@ -893,7 +903,7 @@ async function restoreBackup(file){
 
 /* ---------------- actions ---------------- */
 async function newClient(name,then){
-  const n=(name||"").trim()||prompt("Client name:","");
+  const n=(name||"").trim();
   if(!n)return;
   const c={id:uid(),name:n,key:nameKey(n),phone:"",coffee:"",prefs:"",nextRequest:"",
     discountOn:false,discountPct:0,notifyBefore:false,reminderDate:"",reminderNote:"",createdAt:todayISO()};
@@ -967,7 +977,15 @@ document.addEventListener("click",async e=>{
       if(c)openClient(c.id,a);
       else await newClient(a.name,nc=>{render();openClient(nc.id,a);});
       break;}
-    case"new-client":await newClient("");break;
+    case"new-client":$("#nc-name").value="";$("#nc-phone").value="";
+      $("#ov-new").classList.add("open");window.scrollTo(0,0);setTimeout(()=>$("#nc-name").focus(),50);break;
+    case"nc-cancel":$("#ov-new").classList.remove("open");break;
+    case"nc-create":{const n=$("#nc-name").value.trim();
+      if(!n){toast("Type her name first");break;}
+      const ph=$("#nc-phone").value.trim();
+      await newClient(n,async nc=>{
+        if(ph){nc.phone=ph;await dbPut("clients",nc);}
+        $("#ov-new").classList.remove("open");render();openClient(nc.id);});break;}
     case"open-client":openClient(id);break;
     case"close-client":closeClient();break;
     case"save-client":{const c=clientById(S.openClientId);if(!c)break;
