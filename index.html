@@ -248,6 +248,12 @@ pre.paste-eg{background:var(--surface);border:1.5px solid var(--line);border-rad
 <div class="ov" id="ov-import"><div class="inner" id="ov-import-in"></div></div>
 <div class="ov" id="ov-map"><div class="inner" id="ov-map-in"></div></div>
 <div id="photoview"><button class="x" data-act="pv-close">✕</button><img id="pv-img" alt="nail photo"></div>
+<div id="askbox" style="position:fixed;inset:0;z-index:28;display:none;align-items:center;justify-content:center;background:rgba(20,10,16,.5);padding:20px">
+  <div class="card" style="max-width:340px;width:100%;margin:0">
+    <div id="ask-msg" style="font-weight:600;line-height:1.4;margin-bottom:14px"></div>
+    <div class="btnrow" style="margin:0"><button class="btn" data-act="ask-yes">Yes</button>
+    <button class="btn sec" data-act="ask-no">No</button></div>
+  </div></div>
 <div id="toast"></div>
 
 <script>
@@ -269,6 +275,7 @@ function nameKey(s){return String(s||"").toLowerCase().normalize("NFKD").replace
   .replace(/[^a-z0-9؀-ۿ]+/g," ").trim();}
 function initials(n){const p=String(n||"?").trim().split(/\s+/);return((p[0]||"")[0]||"?").toUpperCase()+((p[1]||"")[0]||"").toUpperCase();}
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("show"),2200);}
+function askConfirm(msg,yes){S._askYes=yes;$("#ask-msg").textContent=msg;$("#askbox").style.display="flex";}
 function fmtMoney(n){if(n==null||n==="")return"";const c=SET.currency||"";return(+n).toLocaleString(undefined,{maximumFractionDigits:2})+(c?" "+c:"");}
 
 function parseDateStr(s,dayFirst){s=String(s??"").trim();if(!s)return null;
@@ -352,7 +359,7 @@ async function dbGet(st,k){const d=await db();return new Promise((res,rej)=>{con
 
 /* ---------------- state ---------------- */
 const S={view:"today",selDate:todayISO(),clients:[],visits:[],appts:[],search:"",log:[],
-  mFrom:addDaysISO(todayISO(),-6),mTo:todayISO(),mPreset:"7d",closingApptId:null,
+  mFrom:addDaysISO(todayISO(),-6),mTo:todayISO(),mPreset:"7d",closingApptId:null,calOffset:0,
   openClientId:null,fromAppt:null,editVisit:null,importRows:null,photoURLs:new Map()};
 async function loadAll(){[S.clients,S.visits,S.appts,S.log]=await Promise.all([dbAll("clients"),dbAll("visits"),dbAll("appts"),dbAll("log")]);
   S.log.sort((a,b)=>b.ts-a.ts);S.log=S.log.slice(0,3);}
@@ -444,7 +451,7 @@ function apptCard(a){const c=clientByKey(a.key);
   if(a.status==="done")badges.push(`<span class="badge b-ok">closed ✓</span>`);
   else if(a.status==="cancelled")badges.push(`<span class="badge b-bad">cancelled</span>`);
   else if(a.confirmed)badges.push(`<span class="badge b-ok">confirmed ✓</span>`);
-  else badges.push(`<span class="badge b-warn">not confirmed</span>`);
+  else badges.push(`<button class="badge b-warn" data-act="confirm-appt" data-id="${a.id}" style="cursor:pointer">not confirmed — confirm?</button>`);
   if(isNew)badges.push(`<span class="badge b-new">new client</span>`);
   const extras=[];
   if(a.dur)extras.push(`⏱ ${esc(durLabel(a.dur))}${a.sort<9998?` → ${esc(fmtMin(a.sort+(+a.dur||60)))}`:""}`);
@@ -487,16 +494,27 @@ function weekGridHTML(start){
   return`<div class="wc-head"><div></div>${head}</div>
     <div class="wc-body"><div class="wc-gut">${gut}</div>${cols}</div>`;}
 function weekCalHTML(){
-  const t0=todayISO();let weeks="";
+  const t0=todayISO();const start0=addDaysISO(t0,S.calOffset*7);
+  let weeks="";
   for(let w=0;w<3;w++){
-    const st=addDaysISO(t0,w*7),en=addDaysISO(st,6);
+    const st=addDaysISO(start0,w*7),en=addDaysISO(st,6);
     const d1=new Date(st+"T12:00:00"),d2=new Date(en+"T12:00:00");
     const lab=`${d1.getDate()} ${MON[d1.getMonth()]} – ${d2.getDate()} ${MON[d2.getMonth()]}`;
     weeks+=`<div class="wc-week"><div class="wc-wklab">${lab}</div>${weekGridHTML(st)}</div>`;}
-  return`<div class="wc"><div class="wc-title">Next 3 weeks</div>${weeks}
+  const dA=new Date(start0+"T12:00:00"),dB=new Date(addDaysISO(start0,20)+"T12:00:00");
+  const yr=dB.getFullYear()!==new Date().getFullYear()?" "+dB.getFullYear():"";
+  const lab=`${dA.getDate()} ${MON[dA.getMonth()]} – ${dB.getDate()} ${MON[dB.getMonth()]}${yr}`;
+  return`<div class="wc">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+      <button class="iconbtn" data-act="cal-prev" style="width:34px;height:34px" aria-label="Earlier weeks">‹</button>
+      <div style="flex:1;text-align:center;font-weight:800;font-size:14px">${esc(lab)}</div>
+      ${S.calOffset!==0?`<button class="chip on" data-act="cal-today" style="padding:5px 10px">Today</button>`:""}
+      <button class="iconbtn" data-act="cal-next" style="width:34px;height:34px" aria-label="Later weeks">›</button>
+    </div>${weeks}
     <div class="wc-legend"><span><i style="background:var(--accent)"></i>confirmed</span>
     <span><i style="background:var(--warn-soft);box-shadow:inset 0 0 0 1.5px var(--warn)"></i>not confirmed</span>
     <span><i style="background:var(--line)"></i>cancelled</span></div></div>`;}
+function calOverlayHTML(){return`<div class="ovbar"><button class="iconbtn" data-act="cal-close">‹</button><h2>Calendar</h2></div><div class="wc-scroll">${weekCalHTML()}</div>`;}
 function viewToday(){
   const days=[];for(let i=0;i<14;i++){const d=addDaysISO(todayISO(),i);
     const dt=new Date(d+"T12:00:00");
@@ -804,7 +822,7 @@ function renderNameSugg(q){const box=$("#a-sugg");if(!box)return;
 function openAppt(id,pre){
   const a=id?S.appts.find(x=>x.id===id):null;
   S.editAppt=a?{...a}:{id:"man|"+uid(),src:"manual",date:S.selDate,time:"",sort:9999,
-    name:(pre&&pre.name)||"",key:"",service:"",price:"",dur:60,confirmed:true,status:""};
+    name:(pre&&pre.name)||"",key:"",service:"",price:"",dur:60,confirmed:false,status:""};
   S.editApptIsNew=!a;
   renderAppt();$("#ov-appt").classList.add("open");window.scrollTo(0,0);}
 function renderAppt(){const a=S.editAppt;
@@ -819,8 +837,7 @@ function renderAppt(){const a=S.editAppt;
     <label>Date</label><input id="a-date" type="date" value="${esc(a.date)}">
     <div class="kv"><div><label>Time</label><input id="a-time" placeholder="e.g. 3:30 PM" value="${esc(a.time)}"></div>
     <div><label>Status</label><select id="a-status">
-      <option value="conf" ${a.confirmed&&a.status!=="cancelled"?"selected":""}>Confirmed</option>
-      <option value="unconf" ${!a.confirmed&&a.status!=="cancelled"?"selected":""}>Not confirmed</option>
+      <option value="open" ${a.status!=="cancelled"?"selected":""}>${a.status==="done"?"Closed ✓":a.confirmed?"Confirmed ✓":"Open — not confirmed"}</option>
       <option value="cancelled" ${a.status==="cancelled"?"selected":""}>Cancelled</option></select></div></div>
     <label>Service (from your menu)</label><select id="a-svc">${serviceOptionsHTML(sv.sel)}</select>
     <label>Custom / special request</label><input id="a-svc-custom" placeholder="optional" value="${esc(sv.custom)}">
@@ -829,6 +846,7 @@ function renderAppt(){const a=S.editAppt;
     <div><label>Price ${SET.currency?`(${esc(SET.currency)})`:""}</label>
     <input id="a-price" type="number" inputmode="decimal" step="0.01" min="0" placeholder="optional" value="${esc(a.price??"")}"></div></div>
     <div class="btnrow" style="margin-bottom:0"><button class="btn wide" data-act="save-appt">Save appointment</button></div>
+    ${!S.editApptIsNew&&!a.confirmed&&a.status!=="done"&&a.status!=="cancelled"?`<div class="btnrow" style="margin-bottom:0"><button class="btn sec wide" data-act="confirm-appt" data-id="${esc(a.id)}">✓ Confirm appointment</button></div>`:""}
     ${!S.editApptIsNew&&a.status!=="done"&&a.status!=="cancelled"?`<div class="btnrow" style="margin-bottom:0"><button class="btn sec wide" data-act="close-appt-btn" data-id="${esc(a.id)}" style="color:var(--good)">✓ Close appointment — log her visit & payment</button></div>`:""}
   </div>
   ${a.src==="sheet"?`<div class="hint">This appointment came from the shared sheet. Your changes are kept — the next import won't overwrite them.</div>`:""}`;
@@ -1007,9 +1025,14 @@ document.addEventListener("click",async e=>{
       else if(S.mPreset==="7d"){S.mFrom=addDaysISO(t,-6);S.mTo=t;}
       else{S.mFrom=t.slice(0,8)+"01";S.mTo=t;}
       render();break;}
-    case"cal-open":$("#ov-cal-in").innerHTML=`<div class="ovbar"><button class="iconbtn" data-act="cal-close">‹</button><h2>Week at a glance</h2></div><div class="wc-scroll">${weekCalHTML()}</div>`;
+    case"cal-open":$("#ov-cal-in").innerHTML=calOverlayHTML();
       $("#ov-cal").classList.add("open");window.scrollTo(0,0);break;
     case"cal-close":$("#ov-cal").classList.remove("open");break;
+    case"cal-prev":case"cal-next":case"cal-today":{
+      if(act==="cal-today")S.calOffset=0;
+      else S.calOffset=Math.max(-8,Math.min(26,S.calOffset+(act==="cal-next"?3:-3)));
+      if($("#ov-cal").classList.contains("open"))$("#ov-cal-in").innerHTML=calOverlayHTML();
+      else render();break;}
     case"sync":case"sync-fetch":{
       if($("#set-sheet")){SET.sheetUrl=$("#set-sheet").value.trim();
         SET.sheetTab=$("#set-tab").value.trim();SET.artist=$("#set-artist").value.trim();saveSet();}
@@ -1031,6 +1054,16 @@ document.addEventListener("click",async e=>{
     case"remap":if(S.importRows)openMap();else{toast("Run an import first — mapping opens automatically");}break;
     case"walkin":openAppt(null);break;
     case"edit-appt":openAppt(id);break;
+    case"ask-no":$("#askbox").style.display="none";S._askYes=null;break;
+    case"ask-yes":{const f=S._askYes;S._askYes=null;$("#askbox").style.display="none";
+      if(f)await f();break;}
+    case"confirm-appt":{const a=S.appts.find(x=>x.id===id);if(!a)break;
+      askConfirm(`Are you sure you want to confirm ${a.name}'s appointment on ${fmtDate(a.date)}${a.time?` at ${a.time}`:""}?`,async()=>{
+        await logAdd(`Confirmed appointment — ${a.name} (${fmtDate(a.date)})`,{kind:"appt-restore",appt:{...a}});
+        a.confirmed=true;a.src="manual";await dbPut("appts",a);
+        $("#ov-appt").classList.remove("open");S.editAppt=null;
+        render();toast("Appointment confirmed ✓");});
+      break;}
     case"close-appt-btn":{const a=S.appts.find(x=>x.id===id);if(!a)break;
       $("#ov-appt").classList.remove("open");S.editAppt=null;
       const go=cl=>{S.fromAppt=a;S.closingApptId=a.id;openVisit(cl.id);};
@@ -1045,7 +1078,8 @@ document.addEventListener("click",async e=>{
         time:t.disp,sort:t.sort,service:joinService($("#a-svc").value,$("#a-svc-custom").value),
         price:$("#a-price").value===""?"":+$("#a-price").value,
         dur:+$("#a-dur").value||60,
-        confirmed:st==="conf",status:st==="cancelled"?"cancelled":(a.status==="done"?"done":"")};
+        confirmed:st==="cancelled"?false:!!a.confirmed,
+        status:st==="cancelled"?"cancelled":(a.status==="done"?"done":"")};
       const prevA=S.editApptIsNew?null:S.appts.find(x=>x.id===upd.id);
       await dbPut("appts",upd);
       const i=S.appts.findIndex(x=>x.id===upd.id);if(i>=0)S.appts[i]=upd;else S.appts.push(upd);
@@ -1117,7 +1151,7 @@ document.addEventListener("click",async e=>{
         const bd=$("#v-bkdate").value;
         if(bd){const bt=parseTime($("#v-bktime").value);
           const na={id:"man|"+uid(),src:"manual",date:bd,time:bt.disp,sort:bt.sort,
-            name:c.name,key:c.key,service:c.nextRequest||"",confirmed:true,status:""};
+            name:c.name,key:c.key,service:c.nextRequest||"",dur:60,confirmed:false,status:""};
           await dbPut("appts",na);S.appts.push(na);booked=true;v._bookedApptId=na.id;}}
       let closeInfo=null;
       if(S.closingApptId){const ap=S.appts.find(x=>x.id===S.closingApptId);
