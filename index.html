@@ -309,7 +309,7 @@ function parseDSV(text){ /* CSV or TSV, quote-aware */
   return rows.filter(r=>r.some(c=>String(c).trim()!==""));}
 
 /* ---------------- settings ---------------- */
-const DEF_SET={sheetUrl:"",sheetTab:"Lina Schedule",artist:"",dayFirst:true,currency:"USD",waCC:"961",confirmDays:1,
+const DEF_SET={sheetUrl:"",sheetTab:"Lina Schedule",artist:"",dayFirst:true,currency:"USD",waCC:"961",confirmDays:1,salonName:"Lina Nails",
   msgConfirm:"Hi {name} 💅 A friendly reminder of your appointment on {date} at {time}. See you soon!",
   msgComeback:"Hi {name} 💅 It's been a while since your last visit — ready for a refresh? Let me know when you'd like to come in!",
   servicesTxt:"Manicure:\nRussian Manicure\nRussian Manicure + Gel Polish\nRussian Manicure + French\nGel Extensions – Full Set\nGel Extensions – Refill\nAcrylic – Full Set\nAcrylic – Refill\nGel Polish Removal\nNail Art / Design\nNail Repair\nClassic Manicure\nSpa Manicure\nPedicure:\nRussian Pedicure\nRussian Pedicure + Gel Polish\nRussian Pedicure + French\nClassic Pedicure\nSpa Pedicure\nCallus Treatment\nCombo:\nRussian Mani + Pedi",
@@ -341,6 +341,19 @@ function splitService(s){s=String(s||"").trim();if(!s)return{sel:"",custom:""};
   return{sel:"",custom:s};}
 function paidAmount(v){if(v.price===""||v.price==null)return null;
   return Math.round((+v.price)*(1-(+v.discountPct||0)/100)*100)/100;}
+function receiptText(v,c){
+  const d=new Date(v.date+"T12:00:00");
+  const abs=isNaN(d)?v.date:`${d.getDate()} ${MON[d.getMonth()]} ${d.getFullYear()}`;
+  const lines=[`🧾 ${SET.salonName||"Receipt"}`,`${c.name} — ${abs}`,""];
+  if(v.services)lines.push(`Service: ${v.services}`);
+  const paid=paidAmount(v);
+  if(paid!=null){
+    if(+v.discountPct){lines.push(`Price: ${fmtMoney(v.price)}`,
+      `Discount ${v.discountPct}%: −${fmtMoney(Math.round(((+v.price)-paid)*100)/100)}`,
+      `Total paid: ${fmtMoney(paid)}`);}
+    else lines.push(`Total paid: ${fmtMoney(paid)}`);}
+  lines.push("","Thank you! See you next time 💅");
+  return lines.join("\n");}
 function joinService(sel,custom){sel=String(sel||"").trim();custom=String(custom||"").trim();
   return sel&&custom?sel+" + "+custom:(sel||custom);}
 
@@ -466,7 +479,7 @@ function apptCard(a){const c=clientByKey(a.key);
     ${a.service?`<div class="svc">${esc(a.service)}</div>`:""}
     ${extras.length?`<div class="extra">${extras.map(x=>`<span>${x}</span>`).join("")}</div>`:""}</div>
     ${c&&c.phone?`<a class="wa" data-act="wa" href="${esc(waLink(c.phone,""))}" target="_blank" rel="noopener" aria-label="WhatsApp ${esc(c.name)}">💬</a>`:""}
-    ${a.status!=="done"&&a.status!=="cancelled"?`<button class="chev" data-act="close-appt-btn" data-id="${a.id}" aria-label="Close appointment" title="Close — log visit & payment" style="font-size:17px;padding:8px 2px;color:var(--good)">✓</button>`:""}
+    ${a.status!=="done"&&a.status!=="cancelled"?`<button class="chev" data-act="close-appt-btn" data-id="${a.id}" aria-label="Close appointment" title="Close — log visit & payment" style="font-size:16px;padding:8px 2px">🧾</button>`:""}
     <button class="chev" data-act="edit-appt" data-id="${a.id}" aria-label="Edit appointment" style="font-size:17px;padding:8px 2px">✎</button></div>`;}
 function weekGridHTML(start){
   const START=9,END=21,H=40,t0=todayISO();
@@ -561,20 +574,22 @@ function viewClients(){
 
 /* ---------------- Follow-ups ---------------- */
 function viewCare(){
-  const t=todayISO();const horizon=addDaysISO(t,+SET.confirmDays||1);
-  const upcoming=S.appts.filter(a=>a.date>=t&&a.date<=horizon&&a.status!=="cancelled")
-    .map(a=>({a,c:clientByKey(a.key)})).filter(x=>x.c&&x.c.notifyBefore&&x.c.phone)
-    .sort((x,y)=>x.a.date===y.a.date?x.a.sort-y.a.sort:x.a.date.localeCompare(y.a.date));
+  const t=todayISO();
+  const upcoming=S.appts.filter(a=>a.date>=t&&a.status!=="cancelled"&&a.status!=="done"&&!a.confirmed)
+    .sort((x,y)=>x.date===y.date?x.sort-y.sort:x.date.localeCompare(y.date));
   const remind=S.clients.filter(c=>c.reminderDate&&c.reminderDate<=addDaysISO(t,7))
     .sort((a,b)=>a.reminderDate.localeCompare(b.reminderDate));
-  const up=upcoming.map(({a,c})=>{
-    const msg=fillTpl(SET.msgConfirm,{name:c.name.split(" ")[0],date:fmtDate(a.date),time:a.time});
-    return`<div class="card"><div class="clientrow"><div class="avatar">${esc(initials(c.name))}</div>
-      <div style="flex:1;min-width:0"><div style="font-weight:700">${esc(c.name)}</div>
+  const up=upcoming.map(a=>{
+    const c=clientByKey(a.key);
+    const msg=c?fillTpl(SET.msgConfirm,{name:c.name.split(" ")[0],date:fmtDate(a.date),time:a.time}):"";
+    return`<div class="card"><div class="clientrow"><div class="avatar">${esc(initials(a.name))}</div>
+      <div style="flex:1;min-width:0"><div style="font-weight:700">${esc(a.name)}</div>
       <div class="meta">${esc(fmtDate(a.date))} · ${esc(a.time||"")}${a.service?" · "+esc(a.service):""}</div></div></div>
       <div class="btnrow" style="margin-bottom:0">
-        <a class="btn sm" style="text-decoration:none" href="${esc(waLink(c.phone,msg))}" target="_blank" rel="noopener">💬 WhatsApp reminder</a>
-        <button class="btn sm sec" data-act="open-client" data-id="${c.id}">Open card</button></div></div>`;}).join("");
+        <button class="btn sm" data-act="confirm-appt" data-id="${a.id}">✓ Confirm</button>
+        ${c&&c.phone?`<a class="btn sm sec" style="text-decoration:none" href="${esc(waLink(c.phone,msg))}" target="_blank" rel="noopener">💬 WhatsApp</a>`:""}
+        ${c?`<button class="btn sm sec" data-act="open-client" data-id="${c.id}">Card</button>`:""}
+      </div></div>`;}).join("");
   const rm=remind.map(c=>{
     const late=c.reminderDate<=t;
     const msg=fillTpl(SET.msgComeback,{name:c.name.split(" ")[0],date:fmtDate(c.reminderDate),time:""});
@@ -588,8 +603,8 @@ function viewCare(){
         <button class="btn sm sec" data-act="remind-snooze" data-id="${c.id}">+1 wk</button></div></div>`;}).join("");
   return`<div class="topbar"><h1>Follow-ups</h1></div><main>
     <div class="hint">Message buttons open <b>your own WhatsApp</b> with the text pre-typed — you review it and press send yourself. Nothing is ever sent automatically.</div>
-    <div class="sect">Confirm — ${(+SET.confirmDays||1)===1?"today & tomorrow":`next ${+SET.confirmDays} days`}</div>
-    ${up||`<div class="hint">No one to remind. Clients appear here when their card has “Remind before appointment” switched on and a phone number saved.</div>`}
+    <div class="sect">To confirm — all upcoming</div>
+    ${up||`<div class="hint">Nothing waiting — every upcoming appointment is confirmed ✓</div>`}
     <div class="sect">Due back</div>
     ${rm||`<div class="hint">No follow-ups due. Set “remind me on…” inside a client's card after her visit.</div>`}</main>`;}
 
@@ -650,12 +665,13 @@ function viewSettings(){
   </div>
   <div class="sect">Preferences</div>
   <div class="card">
+    <label>Salon name (shown on receipts)</label>
+    <input id="set-salon" value="${esc(SET.salonName||"")}">
     <div class="kv"><div><label>Currency</label><select id="set-cur">
       ${["USD","LBP"].map(x=>`<option ${SET.currency===x?"selected":""}>${x}</option>`).join("")}
       ${["USD","LBP"].includes(SET.currency)?"":`<option selected>${esc(SET.currency)}</option>`}</select></div>
     <div><label>WhatsApp country code</label><input id="set-cc" inputmode="numeric" value="${esc(SET.waCC)}"></div></div>
-    <div class="kv"><div><label>Confirm window (days)</label><input id="set-cd" type="number" min="1" max="14" value="${esc(SET.confirmDays)}"></div>
-    <div><label>Dates in sheet are</label><select id="set-df"><option value="1" ${SET.dayFirst?"selected":""}>day/month/year</option><option value="0" ${SET.dayFirst?"":"selected"}>month/day/year</option></select></div></div>
+    <label>Dates in sheet are</label><select id="set-df"><option value="1" ${SET.dayFirst?"selected":""}>day/month/year</option><option value="0" ${SET.dayFirst?"":"selected"}>month/day/year</option></select>
     <label>Appointment reminder message</label>
     <textarea id="set-m1">${esc(SET.msgConfirm)}</textarea>
     <label>“Come back” message</label>
@@ -746,7 +762,9 @@ function renderVisitRead(v){const c=clientById(v.clientId);if(!c)return;
     ${v.notes?`<div class="vnote">${esc(v.notes)}</div>`:""}
     ${ph?`<div class="thumbs">${ph}</div>`:""}
   </div>
+  ${c.phone?`<div class="btnrow"><button class="btn sec wide" data-act="send-receipt">🧾 Send receipt on WhatsApp</button></div>`:""}
   <div class="hint" style="text-align:center">🔒 Past visits are locked — they're your history and can't be changed.</div>`;
+  S.readVisitId=v.id;
   hydratePhotos($("#ov-visit-in"));
   $("#ov-visit").classList.add("open");window.scrollTo(0,0);}
 function openVisit(clientId,visitId){const c=clientById(clientId);if(!c)return;
@@ -784,6 +802,7 @@ function renderVisit(){const{v,isNew}=S.editVisit;const c=clientById(v.clientId)
     <div class="thumbs">${ph}<button class="addphoto" data-act="ph-add">＋</button></div>
     <input type="file" id="file-photo" accept="image/*" multiple hidden>
     <div class="btnrow" style="margin-bottom:0"><button class="btn wide" data-act="save-visit">Save visit</button></div>
+    <div class="btnrow" style="margin-bottom:0"><button class="btn sec wide" data-act="send-receipt">🧾 Send receipt on WhatsApp</button></div>
   </div>`;
   hydratePhotos($("#ov-visit-in"));updFinal();
   $("#v-price").addEventListener("input",updFinal);$("#v-disc").addEventListener("input",updFinal);}
@@ -1137,6 +1156,16 @@ document.addEventListener("click",async e=>{
     case"edit-visit":if(e.target.closest("[data-act='pv-open']"))break;openVisit(S.openClientId,id);break;
     case"cancel-visit":await closeVisit(true);break;
     case"visit-read-close":$("#ov-visit").classList.remove("open");break;
+    case"send-receipt":{
+      let v,c;
+      if(S.editVisit){v={...S.editVisit.v,date:$("#v-date").value||todayISO(),
+        services:joinService($("#v-svc-sel").value,$("#v-svc-custom").value),
+        price:$("#v-price").value===""?"":+$("#v-price").value,
+        discountPct:+($("#v-disc").value||0)||0};c=clientById(v.clientId);}
+      else{v=S.visits.find(x=>x.id===S.readVisitId);c=v&&clientById(v.clientId);}
+      if(!v||!c)break;
+      if(!c.phone){toast("Add her phone number first");break;}
+      window.open(waLink(c.phone,receiptText(v,c)),"_blank");break;}
     case"save-visit":{const ev=S.editVisit;if(!ev)break;const v=ev.v;
       const prevV=ev.isNew?null:S.visits.find(x=>x.id===v.id);
       v.date=$("#v-date").value||todayISO();
@@ -1165,7 +1194,11 @@ document.addEventListener("click",async e=>{
       S.closingApptId=null;
       delete v._bookedApptId;
       ev.newPhotoIds=[];await closeVisit(false);render();
-      toast(booked?`Visit saved + next appointment booked ✓`:"Visit saved ✓");break;}
+      toast(booked?`Visit saved + next appointment booked ✓`:"Visit saved ✓");
+      if(ev.isNew&&c&&c.phone&&paidAmount(v)!=null)
+        askConfirm(`Send ${c.name.split(" ")[0]} her receipt on WhatsApp?`,
+          async()=>{window.open(waLink(c.phone,receiptText(v,c)),"_blank");});
+      break;}
     case"del-visit":{const ev=S.editVisit;if(!ev||ev.isNew)break;
       if(!confirm("Delete this visit?"))break;
       {const c=clientById(ev.v.clientId);const savedPh=[];
@@ -1197,7 +1230,8 @@ document.addEventListener("click",async e=>{
       SET.sheetUrl=$("#set-sheet").value.trim();SET.sheetTab=$("#set-tab").value.trim();
       SET.artist=$("#set-artist").value.trim();
       SET.currency=$("#set-cur").value.trim();SET.waCC=$("#set-cc").value.replace(/\D/g,"");
-      SET.confirmDays=+$("#set-cd").value||1;SET.dayFirst=$("#set-df").value==="1";
+      SET.salonName=$("#set-salon").value.trim();
+      SET.dayFirst=$("#set-df").value==="1";
       SET.msgConfirm=$("#set-m1").value;SET.msgComeback=$("#set-m2").value;
       SET.servicesTxt=$("#set-services").value;
       saveSet();toast("Settings saved ✓");break;}
