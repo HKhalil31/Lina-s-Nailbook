@@ -706,7 +706,7 @@ function viewCare(){
     ${rm||`<div class="hint">No follow-ups due. Set “remind me on…” inside a client's card after her visit.</div>`}</main>`;}
 
 /* ---------------- Earnings ---------------- */
-function viewMoney(){
+function moneyBodyHTML(){
   const from=S.mFrom<=S.mTo?S.mFrom:S.mTo,to=S.mFrom<=S.mTo?S.mTo:S.mFrom;
   const vs=S.visits.filter(v=>v.date>=from&&v.date<=to)
     .sort((a,b)=>b.date.localeCompare(a.date));
@@ -714,8 +714,6 @@ function viewMoney(){
   for(const v of vs){const paid=paidAmount(v);
     if(paid!=null){collected+=paid;discounts+=(+v.price)-paid;priced++;}}
   collected=Math.round(collected*100)/100;discounts=Math.round(discounts*100)/100;
-  const chips=[["today","Today"],["7d","Last 7 days"],["month","This month"]].map(([k,l])=>
-    `<button class="chip ${S.mPreset===k?"on":""}" data-act="m-preset" data-id="${k}">${l}</button>`).join("");
   const rows=vs.map(v=>{const c=clientById(v.clientId);const paid=paidAmount(v);
     return`<div class="card tap visit" data-act="open-client" data-id="${c?c.id:""}">
       <div class="vhead"><span class="vdate">${esc(fmtDate(v.date))}</span>
@@ -723,17 +721,26 @@ function viewMoney(){
         ${v.discountPct?`<span class="badge b-line">-${v.discountPct}%</span>`:""}
         <span class="vprice">${paid==null?"—":v.discountPct?`<s style="color:var(--muted);font-weight:400">${esc(fmtMoney(v.price))}</s> ${esc(fmtMoney(paid))}`:esc(fmtMoney(paid))}</span></div>
       ${v.services?`<div class="vsvc" style="font-size:13px;color:var(--muted)">${esc(v.services)}</div>`:""}</div>`;}).join("");
-  return`<div class="topbar"><h1>Earnings</h1></div><main>
-  <div class="chips">${chips}</div>
-  <div class="kv" style="margin-bottom:12px">
-    <input id="m-from" type="date" value="${esc(from)}"><input id="m-to" type="date" value="${esc(to)}"></div>
-  <div class="stats">
+  return`<div class="stats">
     <div class="stat"><div class="n">${vs.length}</div><div class="l">Visits</div></div>
     <div class="stat"><div class="n">${esc(fmtMoney(collected))}</div><div class="l">Collected</div></div>
     <div class="stat"><div class="n">${esc(fmtMoney(discounts))}</div><div class="l">Discounts given</div></div>
   </div>
   ${priced<vs.length?`<div class="hint" style="margin-bottom:10px">${vs.length-priced} visit${vs.length-priced>1?"s":""} in this period ha${vs.length-priced>1?"ve":"s"} no price entered — not counted.</div>`:""}
-  ${rows||`<div class="empty"><div class="big">💰</div>No visits in this period.</div>`}</main>`;}
+  ${rows||`<div class="empty"><div class="big">💰</div>No visits in this period.</div>`}`;}
+function updateMoneyView(){
+  const b=$("#m-body");if(b)b.innerHTML=moneyBodyHTML();
+  for(const ch of document.querySelectorAll('[data-act="m-preset"]'))
+    ch.classList.toggle("on",ch.dataset.id===S.mPreset);}
+function viewMoney(){
+  const from=S.mFrom<=S.mTo?S.mFrom:S.mTo,to=S.mFrom<=S.mTo?S.mTo:S.mFrom;
+  const chips=[["today","Today"],["7d","Last 7 days"],["month","This month"]].map(([k,l])=>
+    `<button class="chip ${S.mPreset===k?"on":""}" data-act="m-preset" data-id="${k}">${l}</button>`).join("");
+  return`<div class="topbar"><h1>Earnings</h1></div><main>
+  <div class="chips">${chips}</div>
+  <div class="kv" style="margin-bottom:12px">
+    <input id="m-from" type="date" value="${esc(from)}"><input id="m-to" type="date" value="${esc(to)}"></div>
+  <div id="m-body">${moneyBodyHTML()}</div></main>`;}
 
 /* ---------------- Settings ---------------- */
 function viewSettings(){
@@ -1157,6 +1164,9 @@ async function newClient(name,then){
 document.addEventListener("input",e=>{
   const t=e.target;
   if(t&&t.id==="a-name"){renderNameSugg(t.value);return;}
+  if(t&&(t.id==="m-from"||t.id==="m-to")){
+    if(t.id==="m-from")S.mFrom=t.value||S.mFrom;else S.mTo=t.value||S.mTo;
+    S.mPreset="";updateMoneyView();return;}
   if(t&&t.dataset&&t.dataset.actInput==="search"){S.search=t.value;
     const main=t.closest("main");if(main){ /* re-render list only */ }
     render();const i=$("#search");if(i){i.focus();const l=i.value.length;i.setSelectionRange(l,l);}}});
@@ -1405,7 +1415,7 @@ document.addEventListener("change",async e=>{
   const t=e.target;
   if(t.id==="m-from"||t.id==="m-to"){
     if(t.id==="m-from")S.mFrom=t.value||S.mFrom;else S.mTo=t.value||S.mTo;
-    S.mPreset="";render();}
+    S.mPreset="";updateMoneyView();}
   if(t.id==="file-csv"&&t.files[0]){beginImport(parseDSV(await t.files[0].text()));t.value="";}
   if(t.id==="file-restore"&&t.files[0]){await restoreBackup(t.files[0]);t.value="";}
   if(t.id==="file-logo"&&t.files[0]){
