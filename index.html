@@ -12,6 +12,7 @@
   --ground:#FBF8F7; --surface:#FFFFFF; --ink:#2A2126; --muted:#7C6B75;
   --accent:#93355C; --accent-ink:#FFFFFF; --accent-soft:#F5E3EC; --line:#EADCE2;
   --good:#2F7A4D; --good-soft:#E2F0E7; --warn:#A9701F; --warn-soft:#F6ECDA; --bad:#B23F38; --bad-soft:#F6E3E1;
+  --info:#2563CE;
   --shadow:0 1px 3px rgba(42,33,38,.08),0 4px 14px rgba(42,33,38,.06);
   --r:14px;
 }
@@ -20,6 +21,7 @@
     --ground:#191216; --surface:#241A20; --ink:#F2E8ED; --muted:#A78F9C;
     --accent:#D687AC; --accent-ink:#2A1220; --accent-soft:#3A2530; --line:#3A2B33;
     --good:#7FC79A; --good-soft:#22352A; --warn:#DBA95C; --warn-soft:#3A2F1D; --bad:#E08A83; --bad-soft:#402523;
+    --info:#8AB4F8;
     --shadow:0 1px 3px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.3);
   }
 }
@@ -27,12 +29,14 @@
   --ground:#FBF8F7; --surface:#FFFFFF; --ink:#2A2126; --muted:#7C6B75;
   --accent:#93355C; --accent-ink:#FFFFFF; --accent-soft:#F5E3EC; --line:#EADCE2;
   --good:#2F7A4D; --good-soft:#E2F0E7; --warn:#A9701F; --warn-soft:#F6ECDA; --bad:#B23F38; --bad-soft:#F6E3E1;
+  --info:#2563CE;
   --shadow:0 1px 3px rgba(42,33,38,.08),0 4px 14px rgba(42,33,38,.06);
 }
 :root[data-theme="dark"]{
   --ground:#191216; --surface:#241A20; --ink:#F2E8ED; --muted:#A78F9C;
   --accent:#D687AC; --accent-ink:#2A1220; --accent-soft:#3A2530; --line:#3A2B33;
   --good:#7FC79A; --good-soft:#22352A; --warn:#DBA95C; --warn-soft:#3A2F1D; --bad:#E08A83; --bad-soft:#402523;
+  --info:#8AB4F8;
   --shadow:0 1px 3px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.3);
 }
 *{box-sizing:border-box}
@@ -82,6 +86,8 @@ a.wa{width:38px;height:38px;border-radius:50%;background:var(--good-soft);border
 .card.tap:active{transform:scale(.99)}
 .appt{display:flex;gap:12px;align-items:flex-start}
 .appt .time{font-variant-numeric:tabular-nums;font-weight:800;font-size:15px;min-width:62px;padding-top:1px}
+.appt .time.due{color:var(--bad)}
+.appt .time.done{color:var(--info)}
 .appt .who{flex:1;min-width:0}
 .appt .name{font-weight:700;font-size:16px}
 .appt .svc{color:var(--muted);font-size:14px;margin-top:1px}
@@ -359,63 +365,70 @@ function receiptText(v,c){
       `Discount ${v.discountPct}%: −${fmtMoney(Math.round(((+v.price)-paid)*100)/100)}`,
       `*Total paid: ${fmtMoney(paid)}*`);}
     else lines.push(`*Total paid: ${fmtMoney(paid)}*`);}
-  lines.push("","Thank you! See you next time 💅");
   return lines.join("\n");}
 function rr(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);
   ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
 async function makeReceiptImage(v,c){
-  const W=720,P=48,headH=150;
+  const W=720,P=64;
   const cv=document.createElement("canvas");const ctx=cv.getContext("2d");
   const F=s=>`${s}px -apple-system,'Segoe UI',Roboto,sans-serif`;
-  ctx.font="600 "+F(28);
+  ctx.font="600 "+F(27);
   const svcLines=[];
   if(v.services){let line="";
     for(const w of String(v.services).split(/\s+/)){const t=line?line+" "+w:w;
-      if(ctx.measureText(t).width>W-2*P&&line){svcLines.push(line);line=w;}else line=t;}
+      if(ctx.measureText(t).width>W-P-260&&line){svcLines.push(line);line=w;}else line=t;}
     if(line)svcLines.push(line);}
   const paid=paidAmount(v);
-  const priceRows=[];
-  if(paid!=null&&+v.discountPct){priceRows.push(["Price",fmtMoney(v.price)]);
-    priceRows.push([`Discount ${v.discountPct}%`,"−"+fmtMoney(Math.round(((+v.price)-paid)*100)/100)]);}
-  const flowH=52+26+16+40+36*svcLines.length+(priceRows.length?8+40*priceRows.length:0)+(paid!=null?14+56:0);
-  const H=headH+flowH+95;
+  const disc=paid!=null&&+v.discountPct;
+  const rows=1+1+Math.max(1,svcLines.length)+(disc?2:0); /* client, date, service lines, price+discount */
+  const topH=250, rowH=52;
+  const H=topH+34+rows*rowH+(paid!=null?46+72:0)+56;
   cv.width=W*2;cv.height=H*2;ctx.scale(2,2);
-  ctx.fillStyle="#FBF8F7";ctx.fillRect(0,0,W,H);
-  ctx.fillStyle="#FFFFFF";rr(ctx,10,10,W-20,H-20,24);ctx.fill();
-  ctx.strokeStyle="#93355C";ctx.lineWidth=5;rr(ctx,10,10,W-20,H-20,24);ctx.stroke();
-  ctx.save();rr(ctx,10,10,W-20,headH-10,24);ctx.clip();
-  ctx.fillStyle="#93355C";ctx.fillRect(10,10,W-20,headH);ctx.restore();
-  ctx.fillStyle="#FFFFFF";ctx.beginPath();ctx.arc(P+42,headH/2+2,44,0,7);ctx.fill();
+  /* card + double border */
+  ctx.fillStyle="#FFFFFF";ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle="#93355C";ctx.lineWidth=3;rr(ctx,14,14,W-28,H-28,20);ctx.stroke();
+  ctx.strokeStyle="#E9C9D9";ctx.lineWidth=1.5;rr(ctx,24,24,W-48,H-48,14);ctx.stroke();
+  /* centered logo */
+  const cx=W/2;
+  ctx.fillStyle="#F5E3EC";ctx.beginPath();ctx.arc(cx,96,46,0,7);ctx.fill();
   let logo=null;try{logo=await dbGet("photos","receipt-logo");}catch(e){}
   let drewLogo=false;
   if(logo&&logo.blob){
     const img=await new Promise(res=>{const i=new Image();i.onload=()=>res(i);i.onerror=()=>res(null);i.src=URL.createObjectURL(logo.blob);});
-    if(img){ctx.save();ctx.beginPath();ctx.arc(P+42,headH/2+2,40,0,7);ctx.clip();
-      ctx.drawImage(img,P+2,headH/2-38,80,80);ctx.restore();drewLogo=true;}}
-  if(!drewLogo){ctx.font=F(44);ctx.textAlign="center";ctx.textBaseline="middle";
-    ctx.fillText("💅",P+42,headH/2+4);ctx.textBaseline="alphabetic";}
-  ctx.fillStyle="#FFFFFF";ctx.textAlign="left";
-  ctx.font="800 "+F(36);ctx.fillText(SET.salonName||"Receipt",P+106,headH/2-4);
-  ctx.font=F(22);ctx.globalAlpha=.85;ctx.fillText("Receipt",P+106,headH/2+28);ctx.globalAlpha=1;
-  let y=headH+52;
-  ctx.fillStyle="#2A2126";ctx.font="700 "+F(30);ctx.fillText(c.name,P,y);
+    if(img){ctx.save();ctx.beginPath();ctx.arc(cx,96,42,0,7);ctx.clip();
+      ctx.drawImage(img,cx-42,54,84,84);ctx.restore();drewLogo=true;}}
+  if(!drewLogo){ctx.font=F(46);ctx.textAlign="center";ctx.textBaseline="middle";
+    ctx.fillStyle="#93355C";ctx.fillText("💅",cx,98);ctx.textBaseline="alphabetic";}
+  /* salon name + RECEIPT */
+  ctx.textAlign="center";ctx.fillStyle="#2A2126";
+  ctx.font="800 "+F(40);ctx.fillText(SET.salonName||"",cx,188);
+  ctx.fillStyle="#93355C";ctx.font="700 "+F(19);
+  ctx.fillText("R E C E I P T",cx,220);
+  ctx.textAlign="left";
+  /* divider */
+  let y=topH;
+  ctx.strokeStyle="#EADCE2";ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(P,y);ctx.lineTo(W-P,y);ctx.stroke();
+  y+=34+14;
   const d=new Date(v.date+"T12:00:00");
   const abs=isNaN(d)?v.date:`${d.getDate()} ${MON[d.getMonth()]} ${d.getFullYear()}`;
-  ctx.fillStyle="#7C6B75";ctx.font=F(24);ctx.textAlign="right";ctx.fillText(abs,W-P,y);ctx.textAlign="left";
-  y+=26+16;
-  ctx.strokeStyle="#EADCE2";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(P,y);ctx.lineTo(W-P,y);ctx.stroke();
-  y+=40;
-  ctx.fillStyle="#2A2126";ctx.font="600 "+F(28);
-  for(const l of svcLines){ctx.fillText(l,P,y);y+=36;}
-  if(priceRows.length){y+=8;
-    for(const[k,val]of priceRows){ctx.fillStyle="#7C6B75";ctx.font=F(26);ctx.fillText(k,P,y);
-      ctx.textAlign="right";ctx.fillStyle="#2A2126";ctx.font="600 "+F(26);ctx.fillText(val,W-P,y);
-      ctx.textAlign="left";y+=40;}}
-  if(paid!=null){y+=14;
-    ctx.fillStyle="#93355C";ctx.font="800 "+F(34);ctx.fillText("Total paid",P,y+14);
-    ctx.textAlign="right";ctx.fillText(fmtMoney(paid),W-P,y+14);ctx.textAlign="left";y+=56;}
-  ctx.fillStyle="#7C6B75";ctx.font=F(24);ctx.textAlign="center";
-  ctx.fillText("Thank you! See you next time 💅",W/2,H-46);ctx.textAlign="left";
+  const row=(k,val,strong)=>{ctx.fillStyle="#7C6B75";ctx.font=F(24);ctx.fillText(k,P,y);
+    ctx.textAlign="right";ctx.fillStyle="#2A2126";ctx.font=(strong?"700 ":"600 ")+F(27);
+    ctx.fillText(val,W-P,y);ctx.textAlign="left";y+=rowH;};
+  row("Client",c.name,true);
+  row("Date",abs);
+  if(svcLines.length){ctx.fillStyle="#7C6B75";ctx.font=F(24);ctx.fillText("Service",P,y);
+    ctx.textAlign="right";ctx.fillStyle="#2A2126";ctx.font="600 "+F(27);
+    for(const l of svcLines){ctx.fillText(l,W-P,y);y+=rowH-14;}
+    y+=14;ctx.textAlign="left";}
+  else row("Service","—");
+  if(disc){row("Price",fmtMoney(v.price));
+    row(`Discount ${v.discountPct}%`,"−"+fmtMoney(Math.round(((+v.price)-paid)*100)/100));}
+  /* total bar */
+  if(paid!=null){y+=8;
+    ctx.fillStyle="#93355C";rr(ctx,P-10,y-14,W-2*(P-10),72,16);ctx.fill();
+    ctx.fillStyle="#FFFFFF";ctx.font="700 "+F(24);ctx.fillText("TOTAL PAID",P+14,y+30);
+    ctx.textAlign="right";ctx.font="800 "+F(36);ctx.fillText(fmtMoney(paid),W-P-14,y+32);ctx.textAlign="left";}
   return new Promise(res=>cv.toBlob(res,"image/png"));}
 function openReceiptChooser(v,c){S._receipt={v,c};
   $("#rc-name").textContent=c.name;$("#rcbox").style.display="flex";}
@@ -523,7 +536,9 @@ function render(){renderTabs();
   else if(S.view==="care")v.innerHTML=viewCare();
   else if(S.view==="money")v.innerHTML=viewMoney();
   else v.innerHTML=viewSettings();
-  if(S.view==="clients"){const i=$("#search");if(i&&document.activeElement!==i&&S.search)i.value=S.search;}}
+  if(S.view==="clients"){const i=$("#search");if(i&&document.activeElement!==i&&S.search)i.value=S.search;}
+  if(S.view==="today"){const on=$(".day.on"),strip=$(".days");
+    if(on&&strip)strip.scrollLeft=Math.max(0,on.offsetLeft-strip.clientWidth/2+on.clientWidth/2);}}
 
 /* ---------------- Today ---------------- */
 function apptCard(a){const c=clientByKey(a.key);
@@ -542,7 +557,7 @@ function apptCard(a){const c=clientByKey(a.key);
   if(c&&c.discountOn)extras.push(`🏷️ ${c.discountPct||0}% off`);
   if(lv)extras.push(`last: ${esc(fmtDate(lv.date))}`);
   return`<div class="card tap appt ${a.status==="cancelled"?"cancelled":""}" data-act="open-appt" data-id="${a.id}">
-    <div class="time">${esc(a.time||"—")}</div>
+    <div class="time ${a.status==="done"?"done":a.status==="cancelled"?"":"due"}">${esc(a.time||"—")}</div>
     <div class="who"><div class="name">${esc(a.name)} ${badges.join(" ")}</div>
     ${a.service?`<div class="svc">${esc(a.service)}</div>`:""}
     ${extras.length?`<div class="extra">${extras.map(x=>`<span>${x}</span>`).join("")}</div>`:""}</div>
@@ -670,8 +685,21 @@ function viewCare(){
         ${c.phone?`<a class="btn sm" style="text-decoration:none" href="${esc(waLink(c.phone,msg))}" target="_blank" rel="noopener">💬 Message</a>`:""}
         <button class="btn sm sec" data-act="remind-done" data-id="${c.id}">✓ Done</button>
         <button class="btn sm sec" data-act="remind-snooze" data-id="${c.id}">+1 wk</button></div></div>`;}).join("");
+  const remApp=S.appts.filter(a=>a.date>=t&&a.date<=addDaysISO(t,1)&&a.status!=="cancelled"&&a.status!=="done")
+    .map(a=>({a,c:clientByKey(a.key)})).filter(x=>x.c&&x.c.notifyBefore&&x.c.phone)
+    .sort((x,y)=>x.a.date===y.a.date?x.a.sort-y.a.sort:x.a.date.localeCompare(y.a.date));
+  const ra=remApp.map(({a,c})=>{
+    const msg=fillTpl(SET.msgConfirm,{name:c.name.split(" ")[0],date:fmtDate(a.date),time:a.time});
+    return`<div class="card"><div class="clientrow"><div class="avatar">${esc(initials(c.name))}</div>
+      <div style="flex:1;min-width:0"><div style="font-weight:700">${esc(c.name)}</div>
+      <div class="meta">${esc(fmtDate(a.date))} · ${esc(a.time||"")}${a.service?" · "+esc(a.service):""}</div></div></div>
+      <div class="btnrow" style="margin-bottom:0">
+        <a class="btn sm" style="text-decoration:none" href="${esc(waLink(c.phone,msg))}" target="_blank" rel="noopener">💬 Send her the reminder</a>
+        <button class="btn sm sec" data-act="open-client" data-id="${c.id}">Card</button></div></div>`;}).join("");
   return`<div class="topbar"><h1>Follow-ups</h1></div><main>
     <div class="hint">Message buttons open <b>your own WhatsApp</b> with the text pre-typed — you review it and press send yourself. Nothing is ever sent automatically.</div>
+    <div class="sect">Reminders to send — today & tomorrow</div>
+    ${ra||`<div class="hint">No reminders due. A client appears here when “Remind before appointment” is ON in her card (and she has a phone number) and her appointment is today or tomorrow.</div>`}
     <div class="sect">To confirm — all upcoming</div>
     ${up||`<div class="hint">Nothing waiting — every upcoming appointment is confirmed ✓</div>`}
     <div class="sect">Due back</div>
@@ -757,8 +785,9 @@ function viewSettings(){
   <div class="sect">Backup</div>
   <div class="card">
     <div class="hint" style="margin:0 0 10px">Everything lives only on this phone. Export a backup regularly — it includes clients, visits and photos, and can be restored on any device.</div>
-    <div class="btnrow" style="margin-bottom:0"><button class="btn" data-act="export">⬇ Export backup</button>
+    <div class="btnrow"><button class="btn" data-act="export">⬇ Export backup</button>
     <button class="btn sec" data-act="import-backup">⬆ Restore</button></div>
+    <button class="btn sec wide" data-act="export-excel">📊 Export to Excel (clients · visits · appointments)</button>
     <input type="file" id="file-restore" accept=".json,application/json" hidden>
   </div>
   <div class="sect">Danger zone</div>
@@ -805,7 +834,7 @@ function renderClient(){const c=clientById(S.openClientId);if(!c)return closeCli
       <button class="sw ${c.discountOn?"on":""}" data-act="tgl-discount" aria-label="toggle discount"></button></div>
     <div id="c-disc-wrap" style="${c.discountOn?"":"display:none"}"><label>Discount %</label>
       <input id="c-disc" type="number" inputmode="numeric" min="0" max="100" value="${esc(c.discountPct??"")}"></div>
-    <div class="switch"><div><div class="lab">Remind before appointment</div><div class="sub">She appears in Follow-ups before her booking</div></div>
+    <div class="switch"><div><div class="lab">Remind before appointment</div><div class="sub">Her booking shows in Follow-ups with the reminder message ready to send</div></div>
       <button class="sw ${c.notifyBefore?"on":""}" data-act="tgl-notify" aria-label="toggle reminders"></button></div>
     <label>Due back — remind me on</label>
     <div class="kv"><input id="c-rdate" type="date" value="${esc(c.reminderDate||"")}">
@@ -1074,6 +1103,34 @@ async function exportBackup(){
     a.href=URL.createObjectURL(new Blob([payload],{type:"application/json"}));
     a.download=fname;document.body.appendChild(a);a.click();a.remove();toast("Backup downloaded ✓");}
   catch(e){toast("Couldn't save the backup here");}}
+function xmlEsc(s){return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+function sheetXML(name,rows){
+  return`<Worksheet ss:Name="${xmlEsc(name)}"><Table>`+rows.map(r=>
+    `<Row>`+r.map(c=>`<Cell><Data ss:Type="${typeof c==="number"&&isFinite(c)?"Number":"String"}">${xmlEsc(c)}</Data></Cell>`).join("")+`</Row>`).join("")+`</Table></Worksheet>`;}
+function exportExcel(){
+  const cName=id=>{const c=clientById(id);return c?c.name:"?";};
+  const clientsRows=[["Name","Phone","Favorite coffee","Preferences","Discount %","Remind before appt","Next request","Due back on","Visits","Total paid ("+(SET.currency||"")+")"]];
+  for(const c of[...S.clients].sort((a,b)=>a.name.localeCompare(b.name))){
+    const vs=visitsOf(c.id);
+    clientsRows.push([c.name,c.phone||"",c.coffee||"",c.prefs||"",c.discountOn?(c.discountPct||0):"",
+      c.notifyBefore?"yes":"no",c.nextRequest||"",c.reminderDate||"",vs.length,
+      Math.round(vs.reduce((s,v)=>s+(paidAmount(v)||0),0)*100)/100]);}
+  const visitRows=[["Date","Client","Service","Full price","Discount %","Paid","Notes"]];
+  for(const v of[...S.visits].sort((a,b)=>(b.date||"").localeCompare(a.date||""))){
+    visitRows.push([v.date||"",cName(v.clientId),v.services||"",v.price===""?"":+v.price,
+      v.discountPct||0,paidAmount(v)??"",v.notes||""]);}
+  const apptRows=[["Date","Time","Client","Service","Status","Price","Duration (min)"]];
+  for(const a of[...S.appts].sort((x,y)=>x.date===y.date?x.sort-y.sort:x.date.localeCompare(y.date))){
+    apptRows.push([a.date,a.time||"",a.name,a.service||"",
+      a.status==="done"?"closed":a.status==="cancelled"?"cancelled":a.confirmed?"confirmed":"not confirmed",
+      a.price===""||a.price==null?"":+a.price,+a.dur||""]);}
+  const xml=`<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?>`+
+    `<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">`+
+    sheetXML("Clients",clientsRows)+sheetXML("Visits",visitRows)+sheetXML("Appointments",apptRows)+`</Workbook>`;
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([xml],{type:"application/vnd.ms-excel"}));
+  a.download=`nailbook-${todayISO()}.xls`;document.body.appendChild(a);a.click();a.remove();
+  toast("Excel file downloaded ✓");}
 async function restoreBackup(file){
   let j;try{j=JSON.parse(await file.text());}catch(e){toast("That file isn't a NailBook backup");return;}
   if(!j||j.app!=="nailbook"||!Array.isArray(j.clients)){toast("That file isn't a NailBook backup");return;}
@@ -1333,6 +1390,7 @@ document.addEventListener("click",async e=>{
       if($("#set-sheet")){SET.sheetUrl=$("#set-sheet").value.trim();saveSet();}
       await exportBackup();break;}
     case"import-backup":$("#file-restore").click();break;
+    case"export-excel":exportExcel();break;
     case"logo-pick":$("#file-logo").click();break;
     case"logo-clear":await dbDel("photos","receipt-logo");toast("Logo removed — receipts show 💅 again");break;
     case"wipe":{if(!confirm("Delete ALL clients, visits, photos and appointments from this device?"))break;
