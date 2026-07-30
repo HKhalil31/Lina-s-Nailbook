@@ -110,7 +110,8 @@ a.wa{width:38px;height:38px;border-radius:50%;background:var(--good-soft);border
 .day .dn{font-size:17px;font-weight:800;font-variant-numeric:tabular-nums}
 .day .dot{width:5px;height:5px;border-radius:50%;background:var(--accent);margin:3px auto 0;visibility:hidden}
 .day.has .dot{visibility:visible}
-.day.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.day.past{opacity:.6}
+.day.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);opacity:1}
 .day.on .dw{color:var(--accent-ink);opacity:.8}
 .day.on .dot{background:var(--accent-ink)}
 .btn{
@@ -341,7 +342,7 @@ function serviceItems(){return(SET.servicesTxt||"").split("\n").map(s=>s.trim())
 function serviceNames(){return serviceItems().filter(i=>i.name).map(i=>i.name);}
 function servicePrice(name){const it=serviceItems().find(i=>i.name===name);
   return it&&it.price!=null&&!isNaN(it.price)?it.price:null;}
-function serviceOptionsHTML(sel){let h=`<option value="">— choose from menu —</option>`,open=false;
+function serviceOptionsHTML(sel){let h=`<option value="">— add a service —</option>`,open=false;
   for(const it of serviceItems()){
     if(it.group!==undefined){if(open)h+="</optgroup>";h+=`<optgroup label="${esc(it.group)}">`;open=true;}
     else h+=`<option value="${esc(it.name)}" ${it.name===sel?"selected":""}>${esc(it.name)}</option>`;}
@@ -434,6 +435,23 @@ function openReceiptChooser(v,c){S._receipt={v,c};
   $("#rc-name").textContent=c.name;$("#rcbox").style.display="flex";}
 function joinService(sel,custom){sel=String(sel||"").trim();custom=String(custom||"").trim();
   return sel&&custom?sel+" + "+custom:(sel||custom);}
+function splitServices(s){s=String(s||"").trim();const sels=[];
+  const opts=serviceNames().sort((a,b)=>b.length-a.length);
+  let rest=s;
+  while(rest){let hit=null;
+    for(const o of opts){if(rest===o||rest.startsWith(o+" + ")){hit=o;break;}}
+    if(!hit)break;
+    sels.push(hit);rest=rest===hit?"":rest.slice(hit.length+3);}
+  return{sels,custom:rest};}
+function svcPickerHTML(scope,st){
+  const chips=st.sels.map((s,i)=>`<span class="badge b-new" style="font-size:13px;padding:7px 10px;display:inline-flex;align-items:center;gap:7px">${esc(s)}<button data-act="svc-del" data-scope="${scope}" data-i="${i}" aria-label="remove" style="font-weight:800">✕</button></span>`).join("");
+  return`${chips?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">${chips}</div>`:""}
+  <select id="${scope}-svc-sel">${serviceOptionsHTML("")}</select>
+  <label>Custom / special request</label>
+  <input id="${scope}-svc-custom" placeholder="optional" value="${esc(st.custom||"")}">`;}
+function svcNow(scope){const st=scope==="v"?(S.editVisit&&S.editVisit._svc):(S.editAppt&&S.editAppt._svc);
+  if(!st)return"";const cu=$(`#${scope}-svc-custom`);
+  return[...st.sels,String(cu?cu.value:st.custom||"").trim()].filter(Boolean).join(" + ");}
 
 /* ---------------- indexedDB ---------------- */
 let _db=null;
@@ -613,9 +631,9 @@ function weekCalHTML(){
     <span><i style="background:var(--line)"></i>cancelled</span></div></div>`;}
 function calOverlayHTML(){return`<div class="ovbar"><button class="iconbtn" data-act="cal-close">‹</button><h2>Calendar</h2></div><div class="wc-scroll">${weekCalHTML()}</div>`;}
 function viewToday(){
-  const days=[];for(let i=0;i<14;i++){const d=addDaysISO(todayISO(),i);
+  const days=[];for(let i=-7;i<14;i++){const d=addDaysISO(todayISO(),i);
     const dt=new Date(d+"T12:00:00");
-    days.push(`<button class="day ${d===S.selDate?"on":""} ${apptsOn(d).length?"has":""}" data-act="day" data-d="${d}">
+    days.push(`<button class="day ${d===S.selDate?"on":""} ${apptsOn(d).length?"has":""} ${i<0?"past":""}" data-act="day" data-d="${d}">
       <div class="dw">${i===0?"Today":DOW[dt.getDay()]}</div><div class="dn">${dt.getDate()}</div><div class="dot"></div></button>`);}
   const list=apptsOn(S.selDate);
   return`<div class="topbar"><h1>${esc(fmtDate(S.selDate))}</h1>
@@ -883,10 +901,9 @@ function openVisit(clientId,visitId){const c=clientById(clientId);if(!c)return;
   v=v?{...v,photoIds:[...(v.photoIds||[])]}:{id:uid(),clientId,date:(S.fromAppt&&S.fromAppt.date)||todayISO(),
     services:(S.fromAppt&&S.fromAppt.service)||"",price:"",discountPct:c.discountOn?(c.discountPct||0):0,notes:"",photoIds:[]};
   if(!visitId&&v.price===""&&S.fromAppt&&S.fromAppt.price!==""&&S.fromAppt.price!=null)v.price=S.fromAppt.price;
-  S.editVisit={v,isNew,newPhotoIds:[]};
+  S.editVisit={v,isNew,newPhotoIds:[],_svc:splitServices(v.services)};
   renderVisit();$("#ov-visit").classList.add("open");window.scrollTo(0,0);}
 function renderVisit(){const{v,isNew}=S.editVisit;const c=clientById(v.clientId);
-  const sv=splitService(v.services);
   const ph=(v.photoIds||[]).map(p=>`<div class="thumb"><img data-photo="${p}" alt="">
     <button class="x" data-act="ph-del" data-id="${p}">✕</button></div>`).join("");
   $("#ov-visit-in").innerHTML=`
@@ -895,8 +912,8 @@ function renderVisit(){const{v,isNew}=S.editVisit;const c=clientById(v.clientId)
     ${isNew?"":`<button class="iconbtn" data-act="del-visit" title="Delete visit">🗑</button>`}</div>
   <div class="card">
     <label>Date</label><input id="v-date" type="date" value="${esc(v.date)}">
-    <label>Service (from your menu)</label><select id="v-svc-sel">${serviceOptionsHTML(sv.sel)}</select>
-    <label>Custom / special request</label><input id="v-svc-custom" placeholder="e.g. chrome ombré, extra length" value="${esc(sv.custom)}">
+    <label>Services <span style="font-weight:400">(pick one, then add more)</span></label>
+    <div id="v-svc-wrap">${svcPickerHTML("v",S.editVisit._svc)}</div>
     <div class="kv"><div><label>Full price ${SET.currency?`(${esc(SET.currency)})`:""}</label>
       <input id="v-price" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(v.price)}"></div>
     <div><label>Discount %</label><input id="v-disc" type="number" inputmode="numeric" min="0" max="100" value="${esc(v.discountPct||0)}"></div></div>
@@ -952,9 +969,9 @@ function openAppt(id,pre){
   S.editAppt=a?{...a}:{id:"man|"+uid(),src:"manual",date:S.selDate,time:"",sort:9999,
     name:(pre&&pre.name)||"",key:"",service:"",price:"",dur:60,confirmed:false,status:""};
   S.editApptIsNew=!a;
+  S.editAppt._svc=splitServices(S.editAppt.service);
   renderAppt();$("#ov-appt").classList.add("open");window.scrollTo(0,0);}
 function renderAppt(){const a=S.editAppt;
-  const sv=splitService(a.service);
   $("#ov-appt-in").innerHTML=`
   <div class="ovbar"><button class="iconbtn" data-act="close-appt">‹</button>
     <h2>${S.editApptIsNew?"New appointment":"Edit appointment"}</h2>
@@ -967,8 +984,8 @@ function renderAppt(){const a=S.editAppt;
     <div><label>Status</label><select id="a-status">
       <option value="open" ${a.status!=="cancelled"?"selected":""}>${a.status==="done"?"Closed ✓":a.confirmed?"Confirmed ✓":"Open — not confirmed"}</option>
       <option value="cancelled" ${a.status==="cancelled"?"selected":""}>Cancelled</option></select></div></div>
-    <label>Service (from your menu)</label><select id="a-svc">${serviceOptionsHTML(sv.sel)}</select>
-    <label>Custom / special request</label><input id="a-svc-custom" placeholder="optional" value="${esc(sv.custom)}">
+    <label>Services <span style="font-weight:400">(pick one, then add more)</span></label>
+    <div id="a-svc-wrap">${svcPickerHTML("a",a._svc)}</div>
     <div class="kv"><div><label>Approx. duration ⏱</label><select id="a-dur">
       ${[30,45,60,75,90,105,120,150,180,210,240].map(m=>`<option value="${m}" ${(+a.dur||60)===m?"selected":""}>${durLabel(m)}</option>`).join("")}</select></div>
     <div><label>Price ${SET.currency?`(${esc(SET.currency)})`:""}</label>
@@ -1234,7 +1251,7 @@ document.addEventListener("click",async e=>{
       const name=$("#a-name").value.trim();if(!name){toast("Client name is required");break;}
       const t=parseTime($("#a-time").value);const st=$("#a-status").value;
       const upd={...a,src:"manual",name,key:nameKey(name),date:$("#a-date").value||todayISO(),
-        time:t.disp,sort:t.sort,service:joinService($("#a-svc").value,$("#a-svc-custom").value),
+        time:t.disp,sort:t.sort,service:svcNow("a"),
         price:$("#a-price").value===""?"":+$("#a-price").value,
         dur:+$("#a-dur").value||60,
         confirmed:st==="cancelled"?false:!!a.confirmed,
@@ -1295,11 +1312,17 @@ document.addEventListener("click",async e=>{
       $("#a-name").value=c.name;renderNameSugg(c.name);break;}
     case"edit-visit":if(e.target.closest("[data-act='pv-open']"))break;openVisit(S.openClientId,id);break;
     case"cancel-visit":await closeVisit(true);break;
+    case"svc-del":{const scope=b.dataset.scope;
+      const st=scope==="v"?(S.editVisit&&S.editVisit._svc):(S.editAppt&&S.editAppt._svc);
+      if(!st)break;
+      const cu=$(`#${scope}-svc-custom`);if(cu)st.custom=cu.value;
+      st.sels.splice(+b.dataset.i,1);
+      $(`#${scope}-svc-wrap`).innerHTML=svcPickerHTML(scope,st);break;}
     case"visit-read-close":$("#ov-visit").classList.remove("open");break;
     case"send-receipt":{
       let v,c;
       if(S.editVisit){v={...S.editVisit.v,date:$("#v-date").value||todayISO(),
-        services:joinService($("#v-svc-sel").value,$("#v-svc-custom").value),
+        services:svcNow("v"),
         price:$("#v-price").value===""?"":+$("#v-price").value,
         discountPct:+($("#v-disc").value||0)||0};c=clientById(v.clientId);}
       else{v=S.visits.find(x=>x.id===S.readVisitId);c=v&&clientById(v.clientId);}
@@ -1332,7 +1355,7 @@ document.addEventListener("click",async e=>{
     case"save-visit":{const ev=S.editVisit;if(!ev)break;const v=ev.v;
       const prevV=ev.isNew?null:S.visits.find(x=>x.id===v.id);
       v.date=$("#v-date").value||todayISO();
-      v.services=joinService($("#v-svc-sel").value,$("#v-svc-custom").value);
+      v.services=svcNow("v");
       v.price=$("#v-price").value===""?"":+$("#v-price").value;
       v.discountPct=+($("#v-disc").value||0)||0;v.notes=$("#v-notes").value.trim();
       await dbPut("visits",v);
@@ -1413,6 +1436,12 @@ document.addEventListener("click",async e=>{
 
 document.addEventListener("change",async e=>{
   const t=e.target;
+  if(t.id==="v-svc-sel"||t.id==="a-svc-sel"){
+    const scope=t.id[0];
+    const st=scope==="v"?(S.editVisit&&S.editVisit._svc):(S.editAppt&&S.editAppt._svc);
+    if(st){const cu=$(`#${scope}-svc-custom`);if(cu)st.custom=cu.value;
+      if(t.value)st.sels.push(t.value);
+      $(`#${scope}-svc-wrap`).innerHTML=svcPickerHTML(scope,st);}}
   if(t.id==="m-from"||t.id==="m-to"){
     if(t.id==="m-from")S.mFrom=t.value||S.mFrom;else S.mTo=t.value||S.mTo;
     S.mPreset="";updateMoneyView();}
