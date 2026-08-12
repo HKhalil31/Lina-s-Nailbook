@@ -540,7 +540,8 @@ function openWA(url){if(!url)return;
 function fillTpl(t,a){return String(t||"")
   .replace(/\{\s*name\s*\}/gi,a.name||"")
   .replace(/\{\s*date\s*\}/gi,a.date||"")
-  .replace(/\{\s*time\s*\}/gi,a.time||"");}
+  .replace(/\{\s*time\s*\}/gi,a.time||"")
+  .replace(/\{\s*service\s*\}/gi,a.service||"");}
 function durLabel(m){m=+m||0;return m<60?`${m} min`:`${Math.floor(m/60)} h${m%60?` ${m%60}`:""}`;}
 function fmtMin(mins){const h=Math.floor(mins/60)%24,mi=Math.round(mins%60);
   return`${h%12||12}:${pad(mi)} ${h>=12?"PM":"AM"}`;}
@@ -686,7 +687,7 @@ function viewCare(){
     .sort((a,b)=>a.reminderDate.localeCompare(b.reminderDate));
   const up=upcoming.map(a=>{
     const c=clientByKey(a.key);
-    const msg=c?fillTpl(SET.msgConfirm,{name:c.name.split(" ")[0],date:fmtDate(a.date),time:a.time}):"";
+    const msg=c?fillTpl(SET.msgConfirm,{name:c.name.split(" ")[0],date:fmtDate(a.date),time:a.time,service:a.service}):"";
     return`<div class="card"><div class="clientrow"><div class="avatar">${esc(initials(a.name))}</div>
       <div style="flex:1;min-width:0"><div style="font-weight:700">${esc(a.name)}</div>
       <div class="meta">${esc(fmtDate(a.date))} · ${esc(a.time||"")}${a.service?" · "+esc(a.service):""}</div></div></div>
@@ -697,7 +698,8 @@ function viewCare(){
       </div></div>`;}).join("");
   const rm=remind.map(c=>{
     const late=c.reminderDate<=t;
-    const msg=fillTpl(SET.msgComeback,{name:c.name.split(" ")[0],date:fmtDate(c.reminderDate),time:""});
+    const msg=fillTpl(SET.msgComeback,{name:c.name.split(" ")[0],date:fmtDate(c.reminderDate),time:"",
+      service:c.nextRequest||(lastVisit(c.id)||{}).services||""});
     return`<div class="card"><div class="clientrow"><div class="avatar">${esc(initials(c.name))}</div>
       <div style="flex:1;min-width:0"><div style="font-weight:700">${esc(c.name)}
         <span class="badge ${late?"b-warn":"b-line"}">${esc(fmtDate(c.reminderDate))}</span></div>
@@ -710,7 +712,7 @@ function viewCare(){
     .map(a=>({a,c:clientByKey(a.key)})).filter(x=>x.c&&x.c.notifyBefore&&x.c.phone)
     .sort((x,y)=>x.a.date===y.a.date?x.a.sort-y.a.sort:x.a.date.localeCompare(y.a.date));
   const ra=remApp.map(({a,c})=>{
-    const msg=fillTpl(SET.msgConfirm,{name:c.name.split(" ")[0],date:fmtDate(a.date),time:a.time});
+    const msg=fillTpl(SET.msgConfirm,{name:c.name.split(" ")[0],date:fmtDate(a.date),time:a.time,service:a.service});
     return`<div class="card"><div class="clientrow"><div class="avatar">${esc(initials(c.name))}</div>
       <div style="flex:1;min-width:0"><div style="font-weight:700">${esc(c.name)}</div>
       <div class="meta">${esc(fmtDate(a.date))} · ${esc(a.time||"")}${a.service?" · "+esc(a.service):""}</div></div></div>
@@ -805,7 +807,7 @@ function viewSettings(){
     <textarea id="set-m1">${esc(SET.msgConfirm)}</textarea>
     <label>“Come back” message</label>
     <textarea id="set-m2">${esc(SET.msgComeback)}</textarea>
-    <div class="hint">{name}, {date} and {time} are filled in automatically.</div>
+    <div class="hint">{name}, {date}, {time} and {service} are filled in automatically. In the “come back” message, {service} uses her next-visit request, or her last visit's services.</div>
     <label>Service menu <span style="font-weight:400">(one per line — a line ending with “:” starts a group)</span></label>
     <textarea id="set-services" style="min-height:150px">${esc(SET.servicesTxt)}</textarea>
     <div class="btnrow" style="margin-bottom:0"><button class="btn" data-act="save-settings">Save settings</button></div>
