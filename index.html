@@ -537,7 +537,10 @@ function waLink(phone,msg){const n=waNumber(phone);if(!n)return"";
 function openWA(url){if(!url)return;
   const a=document.createElement("a");a.href=url;a.target="_blank";a.rel="noopener";
   document.body.appendChild(a);a.click();a.remove();}
-function fillTpl(t,a){return String(t||"").replace(/\{name\}/g,a.name||"").replace(/\{date\}/g,a.date||"").replace(/\{time\}/g,a.time||"");}
+function fillTpl(t,a){return String(t||"")
+  .replace(/\{\s*name\s*\}/gi,a.name||"")
+  .replace(/\{\s*date\s*\}/gi,a.date||"")
+  .replace(/\{\s*time\s*\}/gi,a.time||"");}
 function durLabel(m){m=+m||0;return m<60?`${m} min`:`${Math.floor(m/60)} h${m%60?` ${m%60}`:""}`;}
 function fmtMin(mins){const h=Math.floor(mins/60)%24,mi=Math.round(mins%60);
   return`${h%12||12}:${pad(mi)} ${h>=12?"PM":"AM"}`;}
