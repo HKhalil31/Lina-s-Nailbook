@@ -254,6 +254,7 @@ pre.paste-eg{background:var(--surface);border:1.5px solid var(--line);border-rad
 <div class="ov" id="ov-cal"><div class="inner" id="ov-cal-in"></div></div>
 <div class="ov" id="ov-appt"><div class="inner" id="ov-appt-in"></div></div>
 <div class="ov" id="ov-camp"><div class="inner" id="ov-camp-in"></div></div>
+<div class="ov" id="ov-hours"><div class="inner" id="ov-hours-in"></div></div>
 <div class="ov" id="ov-import"><div class="inner" id="ov-import-in"></div></div>
 <div class="ov" id="ov-map"><div class="inner" id="ov-map-in"></div></div>
 <div id="photoview"><button class="x" data-act="pv-close">✕</button><img id="pv-img" alt="nail photo"></div>
@@ -262,6 +263,14 @@ pre.paste-eg{background:var(--surface);border:1.5px solid var(--line);border-rad
     <div id="ask-msg" style="font-weight:600;line-height:1.4;margin-bottom:14px"></div>
     <div class="btnrow" style="margin:0"><button class="btn" data-act="ask-yes">Yes</button>
     <button class="btn sec" data-act="ask-no">No</button></div>
+  </div></div>
+<div id="avbox" style="position:fixed;inset:0;z-index:28;display:none;align-items:center;justify-content:center;background:rgba(20,10,16,.5);padding:20px">
+  <div class="card" style="max-width:380px;width:100%;margin:0">
+    <div style="font-weight:700;margin-bottom:10px" id="av-title">Free hours</div>
+    <textarea id="av-text" style="min-height:200px;font-size:14px"></textarea>
+    <div class="hint">Check it, edit anything, then send.</div>
+    <div class="btnrow" style="margin-bottom:0"><button class="btn" data-act="av-send" id="av-send-btn">💬 Send</button>
+    <button class="btn sec" data-act="av-cancel">Cancel</button></div>
   </div></div>
 <div id="rcbox" style="position:fixed;inset:0;z-index:28;display:none;align-items:center;justify-content:center;background:rgba(20,10,16,.5);padding:20px">
   <div class="card" style="max-width:340px;width:100%;margin:0">
@@ -328,7 +337,7 @@ function parseDSV(text){ /* CSV or TSV, quote-aware */
 
 /* ---------------- settings ---------------- */
 const DEF_SET={sheetUrl:"",sheetTab:"Lina Schedule",artist:"",dayFirst:true,currency:"USD",waCC:"961",confirmDays:1,salonName:"Lina Chahrour",
-  workStart:"09:00",workEnd:"19:00",
+  workStart:"09:00",workEnd:"19:00",dayHours:{},
   campaignMsg:"Hi {name} 💅 We have something special for you this week — reply to book your spot!",
   msgConfirm:"Hi {name} 💅 A friendly reminder of your appointment on {date} at {time}. See you soon!",
   msgComeback:"Hi {name} 💅 It's been a while since your last visit — ready for a refresh? Let me know when you'd like to come in!",
@@ -341,6 +350,7 @@ if(SET.waCC==="962")SET.waCC="961";
 if(SET.confirmDays===3)SET.confirmDays=1;
 if(SET.salonName==="Lina Nails")SET.salonName="Lina Chahrour";
 if(SET.servicesTxt&&SET.servicesTxt.includes("Russian Mani + Pedi")&&!SET.servicesTxt.includes("Dual Forms"))SET.servicesTxt=DEF_SET.servicesTxt;
+if(SET.dayHours)for(const k of Object.keys(SET.dayHours))if(k<todayISO())delete SET.dayHours[k];
 function saveSet(){localStorage.setItem("nailbook.settings",JSON.stringify(SET));}
 function serviceItems(){return(SET.servicesTxt||"").split("\n").map(s=>s.trim()).filter(Boolean).map(l=>{
   if(l.endsWith(":"))return{group:l.slice(0,-1)};
@@ -452,12 +462,16 @@ async function pickContact(cb){
     if(sel&&sel[0])cb(String((sel[0].name&&sel[0].name[0])||"").trim(),
       String((sel[0].tel&&sel[0].tel[0])||"").trim());}
   catch(e){/* user cancelled */}}
-function availText(){
+function toMin(t){return(+String(t).slice(0,2))*60+(+String(t).slice(3,5)||0);}
+function dayWork(d){const o=(SET.dayHours||{})[d];
+  return{s:(o&&o.s)||SET.workStart||"09:00",e:(o&&o.e)||SET.workEnd||"19:00",off:!!(o&&o.off)};}
+function availText(c){
   const t=todayISO();
-  const ws=(+SET.workStart.slice(0,2))*60+(+SET.workStart.slice(3,5)||0);
-  const we=(+SET.workEnd.slice(0,2))*60+(+SET.workEnd.slice(3,5)||0);
-  const lines=[`💅 *${SET.salonName}* — free times this week`];
+  const lines=[c?`Hi ${c.name.split(" ")[0]} 💅 here are my free times this week:`
+    :`💅 *${SET.salonName}* — free times this week`];
   for(let i=0;i<7;i++){const d=addDaysISO(t,i);
+    const h=dayWork(d);if(h.off)continue;
+    const ws=toMin(h.s),we=toMin(h.e);
     const busy=apptsOn(d).filter(a=>a.status!=="cancelled").map(a=>[a.sort,a.sort+(+a.dur||60)]);
     const free=[];
     for(let m=ws;m+60<=we;m+=60){
@@ -503,6 +517,24 @@ async function makePriceListImage(){
       ctx.fillText(priceDisp(it),W-P,y);ctx.textAlign="left";}
     y+=44;}
   return new Promise(res=>cv.toBlob(res,"image/png"));}
+function renderHours(){
+  const rows=Object.keys(S._dh).sort().map(d=>{const h=S._dh[d];const dt=new Date(d+"T12:00:00");
+    return`<div class="card" style="padding:10px 14px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="min-width:80px;font-weight:700;font-size:14px">${d===todayISO()?"Today":DOW[dt.getDay()]+" "+dt.getDate()}</div>
+        ${h.off?`<div style="flex:1;color:var(--muted);font-weight:600">Day off</div>`
+        :`<input type="time" id="dh-s-${d}" value="${esc(h.s)}" style="flex:1;padding:8px"><span style="color:var(--muted)">–</span>
+          <input type="time" id="dh-e-${d}" value="${esc(h.e)}" style="flex:1;padding:8px">`}
+        <button class="chip ${h.off?"on":""}" data-act="dh-off" data-d="${d}">Off</button>
+      </div></div>`;}).join("");
+  $("#ov-hours-in").innerHTML=`
+  <div class="ovbar"><button class="iconbtn" data-act="hours-close">‹</button><h2>🕐 My working hours</h2></div>
+  <div class="hint" style="margin-bottom:10px">These feed the “free hours” message automatically — booked appointments are removed for you. Days start from your default (${esc(SET.workStart)}–${esc(SET.workEnd)}, set in Settings); change any day here or mark it Off.</div>
+  ${rows}
+  <div class="btnrow"><button class="btn wide" data-act="hours-save">Save hours</button></div>`;}
+function collectDh(){for(const d of Object.keys(S._dh)){if(S._dh[d].off)continue;
+  const s=document.getElementById(`dh-s-${d}`),e=document.getElementById(`dh-e-${d}`);
+  if(s&&s.value)S._dh[d].s=s.value;if(e&&e.value)S._dh[d].e=e.value;}}
 function genericCampMsg(){
   return fillTpl(SET.campaignMsg||"",{name:"",date:"",time:"",service:""})
     .replace(/\s+([,.!؟?])/g,"$1").replace(/ {2,}/g," ").trim();}
@@ -510,6 +542,10 @@ function campListHTML(){
   const msg=SET.campaignMsg||"";
   const cs=S.clients.filter(c=>c.phone).sort((a,b)=>a.name.localeCompare(b.name));
   if(!cs.length)return`<div class="hint">No clients with phone numbers yet — but you can still use the buttons above to send anywhere.</div>`;
+  const queue=cs.filter(c=>!S.campSelOff.has(c.id)&&!S.campSent.has(c.id));
+  const btn=`<div class="btnrow"><button class="btn wide" data-act="camp-send-next">${
+    queue.length?`💬 Send to selected — ${queue.length} left (next: ${esc(queue[0].name.split(" ")[0])})`
+    :"✓ All selected clients sent"}</button></div>`;
   const rows=cs.map(c=>{
     const sent=S.campSent.has(c.id),off=S.campSelOff.has(c.id);
     const m=fillTpl(msg,{name:c.name.split(" ")[0],date:"",time:"",service:""});
@@ -518,7 +554,7 @@ function campListHTML(){
       <div style="flex:1;min-width:0"><div style="font-weight:700">${esc(c.name)} ${sent?'<span class="badge b-ok">sent ✓</span>':""}</div>
       <div class="meta">📞 ${esc(c.phone)}${off?" · tap to include":""}</div></div>
       ${off?"":`<a class="wa" data-act="camp-wa" data-id="${c.id}" href="${esc(waLink(c.phone,m))}" target="_blank" rel="noopener">💬</a>`}</div>`;}).join("");
-  return rows;}
+  return btn+rows;}
 function renderCamp(){
   const withPhone=S.clients.filter(c=>c.phone);
   $("#ov-camp-in").innerHTML=`
@@ -736,7 +772,8 @@ function weekCalHTML(){
       ${S.calOffset!==0?`<button class="chip on" data-act="cal-today" style="padding:5px 10px">Today</button>`:""}
       <button class="iconbtn" data-act="cal-next" style="width:34px;height:34px" aria-label="Later weeks">›</button>
     </div>${weeks}
-    <div class="btnrow" style="margin:4px 0 10px"><button class="btn sec wide" data-act="avail-share">📤 Share my free hours on WhatsApp</button></div>
+    <div class="btnrow" style="margin:4px 0 10px"><button class="btn sec" data-act="avail-share">📤 Share free hours</button>
+    <button class="btn sec" data-act="hours-open">🕐 My hours</button></div>
     <div class="wc-legend"><span><i style="background:var(--accent)"></i>confirmed</span>
     <span><i style="background:var(--warn-soft);box-shadow:inset 0 0 0 1.5px var(--warn)"></i>not confirmed</span>
     <span><i style="background:var(--line)"></i>cancelled</span></div></div>`;}
@@ -911,9 +948,9 @@ function viewSettings(){
       ${["USD","LBP"].includes(SET.currency)?"":`<option selected>${esc(SET.currency)}</option>`}</select></div>
     <div><label>WhatsApp country code</label><input id="set-cc" inputmode="numeric" value="${esc(SET.waCC)}"></div></div>
     <label>Dates in sheet are</label><select id="set-df"><option value="1" ${SET.dayFirst?"selected":""}>day/month/year</option><option value="0" ${SET.dayFirst?"":"selected"}>month/day/year</option></select>
-    <div class="kv"><div><label>Working hours — from</label><input id="set-ws" type="time" value="${esc(SET.workStart||"09:00")}"></div>
+    <div class="kv"><div><label>Default working hours — from</label><input id="set-ws" type="time" value="${esc(SET.workStart||"09:00")}"></div>
     <div><label>to</label><input id="set-we" type="time" value="${esc(SET.workEnd||"19:00")}"></div></div>
-    <div class="hint">Used by “Share my free hours” under the calendar.</div>
+    <div class="hint">The starting point for every day. For flexible days, use “🕐 My hours” under the calendar to change or close individual days.</div>
     <label>Appointment reminder message</label>
     <textarea id="set-m1">${esc(SET.msgConfirm)}</textarea>
     <label>“Come back” message</label>
@@ -963,7 +1000,8 @@ function renderClient(){const c=clientById(S.openClientId);if(!c)return closeCli
     ${c.phone?`<a class="btn sec" style="text-decoration:none" href="tel:${esc(c.phone)}">📞 Call</a>
     <a class="btn sec" style="text-decoration:none" href="${esc(waLink(c.phone,""))}" target="_blank" rel="noopener">💬 WhatsApp</a>`:""}
     <button class="btn" data-act="add-visit">＋ Add visit</button></div>
-  <div class="btnrow" style="margin-top:-4px"><button class="btn sec wide" data-act="book-next">🗓 Book her next appointment</button></div>
+  <div class="btnrow" style="margin-top:-4px"><button class="btn sec" data-act="book-next">🗓 Book next</button>
+  ${c.phone?`<button class="btn sec" data-act="avail-client">🕐 Send free hours</button>`:""}</div>
   <div class="sect">Details</div>
   <div class="card">
     <label>Name</label><input id="c-name" value="${esc(c.name)}">
@@ -1335,11 +1373,44 @@ document.addEventListener("click",async e=>{
     case"camp-all":S.campSelOff.clear();{const l=$("#camp-list");if(l)l.innerHTML=campListHTML();}break;
     case"camp-none":{for(const c of S.clients.filter(x=>x.phone))S.campSelOff.add(c.id);
       const l=$("#camp-list");if(l)l.innerHTML=campListHTML();break;}
+    case"camp-send-next":{
+      const cs=S.clients.filter(c=>c.phone).sort((a,b)=>a.name.localeCompare(b.name));
+      const q=cs.filter(c=>!S.campSelOff.has(c.id)&&!S.campSent.has(c.id));
+      if(!q.length){toast("All selected clients are marked sent ✓");break;}
+      const c=q[0];S.campSent.add(c.id);
+      openWA(waLink(c.phone,fillTpl(SET.campaignMsg||"",{name:c.name.split(" ")[0],date:"",time:"",service:""})));
+      const l=$("#camp-list");if(l)l.innerHTML=campListHTML();break;}
     case"camp-share-any":openWA("https://wa.me/?text="+encodeURIComponent(genericCampMsg()));break;
     case"camp-send-num":{const raw=$("#camp-num").value.trim();
       if(!raw.replace(/\D/g,"")){toast("Type a phone number first");break;}
       openWA(waLink(raw,genericCampMsg()));break;}
-    case"avail-share":openWA("https://wa.me/?text="+encodeURIComponent(availText()));break;
+    case"avail-share":{S._avail={c:null};
+      $("#av-title").textContent="Free hours — share anywhere";
+      $("#av-send-btn").textContent="💬 Send (pick chat)";
+      $("#av-text").value=availText(null);
+      $("#avbox").style.display="flex";break;}
+    case"avail-client":{const c=clientById(S.openClientId);if(!c)break;
+      S._avail={c};
+      $("#av-title").textContent=`Free hours — to ${c.name.split(" ")[0]}`;
+      $("#av-send-btn").textContent=`💬 Send to ${esc(c.name.split(" ")[0])}`;
+      $("#av-text").value=availText(c);
+      $("#avbox").style.display="flex";break;}
+    case"av-cancel":$("#avbox").style.display="none";S._avail=null;break;
+    case"hours-open":{$("#avbox").style.display="none";
+      S._dh={};for(let i=0;i<7;i++){const d=addDaysISO(todayISO(),i);S._dh[d]={...dayWork(d)};}
+      renderHours();$("#ov-hours").classList.add("open");window.scrollTo(0,0);break;}
+    case"hours-close":$("#ov-hours").classList.remove("open");break;
+    case"dh-off":{collectDh();const d=b.dataset.d;S._dh[d].off=!S._dh[d].off;renderHours();break;}
+    case"hours-save":{collectDh();
+      SET.dayHours=SET.dayHours||{};
+      for(const k of Object.keys(SET.dayHours))if(k<todayISO())delete SET.dayHours[k];
+      for(const d of Object.keys(S._dh))SET.dayHours[d]={s:S._dh[d].s,e:S._dh[d].e,off:S._dh[d].off};
+      saveSet();$("#ov-hours").classList.remove("open");toast("Hours saved ✓");break;}
+    case"av-send":{const txt=$("#av-text").value.trim();
+      if(!txt){toast("The message is empty");break;}
+      const c=S._avail&&S._avail.c;
+      $("#avbox").style.display="none";S._avail=null;
+      openWA(c&&c.phone?waLink(c.phone,txt):"https://wa.me/?text="+encodeURIComponent(txt));break;}
     case"price-share":openPriceChooser();break;
     case"ct-new":{if(!hasContactPicker()){toast("Contact picking isn't allowed on this phone/browser (iPhones don't support it) — type it manually");break;}
       await pickContact((n,tel)=>{if(n)$("#nc-name").value=n;if(tel)$("#nc-phone").value=tel;});break;}
