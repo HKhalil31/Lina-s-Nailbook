@@ -246,12 +246,14 @@ pre.paste-eg{background:var(--surface);border:1.5px solid var(--line);border-rad
     <label>Name</label><input id="nc-name" autocomplete="off" placeholder="her full name">
     <label>Phone <span style="font-weight:400">(optional — enables WhatsApp)</span></label>
     <input id="nc-phone" type="tel" inputmode="tel" placeholder="03 …">
+    <button class="btn sec wide" data-act="ct-new" style="margin-top:10px">📇 Pick from phone contacts</button>
     <div class="btnrow" style="margin-bottom:0">
       <button class="btn" data-act="nc-create">＋ Create client</button>
       <button class="btn sec" data-act="nc-cancel">Cancel</button></div>
   </div></div></div>
 <div class="ov" id="ov-cal"><div class="inner" id="ov-cal-in"></div></div>
 <div class="ov" id="ov-appt"><div class="inner" id="ov-appt-in"></div></div>
+<div class="ov" id="ov-camp"><div class="inner" id="ov-camp-in"></div></div>
 <div class="ov" id="ov-import"><div class="inner" id="ov-import-in"></div></div>
 <div class="ov" id="ov-map"><div class="inner" id="ov-map-in"></div></div>
 <div id="photoview"><button class="x" data-act="pv-close">✕</button><img id="pv-img" alt="nail photo"></div>
@@ -290,7 +292,9 @@ function nameKey(s){return String(s||"").toLowerCase().normalize("NFKD").replace
 function initials(n){const p=String(n||"?").trim().split(/\s+/);return((p[0]||"")[0]||"?").toUpperCase()+((p[1]||"")[0]||"").toUpperCase();}
 function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("show"),2200);}
 function askConfirm(msg,yes){S._askYes=yes;$("#ask-msg").textContent=msg;$("#askbox").style.display="flex";}
-function fmtMoney(n){if(n==null||n==="")return"";const c=SET.currency||"";return(+n).toLocaleString(undefined,{maximumFractionDigits:2})+(c?" "+c:"");}
+function fmtMoney(n){if(n==null||n==="")return"";const c=SET.currency||"";
+  const s=(+n).toLocaleString(undefined,{maximumFractionDigits:2});
+  return c==="USD"?"$"+s:s+(c?" "+c:"");}
 
 function parseDateStr(s,dayFirst){s=String(s??"").trim();if(!s)return null;
   let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);if(m)return isoOf(+m[1],+m[2],+m[3]);
@@ -323,22 +327,29 @@ function parseDSV(text){ /* CSV or TSV, quote-aware */
   return rows.filter(r=>r.some(c=>String(c).trim()!==""));}
 
 /* ---------------- settings ---------------- */
-const DEF_SET={sheetUrl:"",sheetTab:"Lina Schedule",artist:"",dayFirst:true,currency:"USD",waCC:"961",confirmDays:1,salonName:"Lina Nails",
+const DEF_SET={sheetUrl:"",sheetTab:"Lina Schedule",artist:"",dayFirst:true,currency:"USD",waCC:"961",confirmDays:1,salonName:"Lina Chahrour",
+  workStart:"09:00",workEnd:"19:00",
+  campaignMsg:"Hi {name} 💅 We have something special for you this week — reply to book your spot!",
   msgConfirm:"Hi {name} 💅 A friendly reminder of your appointment on {date} at {time}. See you soon!",
   msgComeback:"Hi {name} 💅 It's been a while since your last visit — ready for a refresh? Let me know when you'd like to come in!",
-  servicesTxt:"Manicure:\nRussian Manicure\nRussian Manicure + Gel Polish\nRussian Manicure + French\nGel Extensions – Full Set\nGel Extensions – Refill\nAcrylic – Full Set\nAcrylic – Refill\nGel Polish Removal\nNail Art / Design\nNail Repair\nClassic Manicure\nSpa Manicure\nPedicure:\nRussian Pedicure\nRussian Pedicure + Gel Polish\nRussian Pedicure + French\nClassic Pedicure\nSpa Pedicure\nCallus Treatment\nCombo:\nRussian Mani + Pedi",
+  servicesTxt:"Brush Work:\nRussian Manicure = 30\nRussian Manicure + Gel Polish – Short = 55\nRussian Manicure + Gel Polish – Medium = 65\nRussian Manicure + Gel Polish – Long = 70\nDual Forms:\nDual Forms – Short = 100\nDual Forms – Medium = 110\nDual Forms – Long = 125\nPedicure:\nRussian Pedicure = 30\nRussian Pedicure + Gel Polish = 55\nAdd Ons:\nFrench Tips / Chrome / Ombre = 10\nCat Eye = 5\nDesign = starting $2/nail\nGel Polish Removal = 5\nFixing = starting $2/nail",
   mapping:null,lastSync:"",hiddenAppts:[]};
 let SET={...DEF_SET};
 try{Object.assign(SET,JSON.parse(localStorage.getItem("nailbook.settings")||"{}"));}catch(e){}
 if(SET.currency==="JD")SET.currency="USD";
 if(SET.waCC==="962")SET.waCC="961";
-if(SET.servicesTxt&&SET.servicesTxt.includes("="))SET.servicesTxt=SET.servicesTxt.replace(/\s*=\s*[\d.,]+\s*$/gm,"");
 if(SET.confirmDays===3)SET.confirmDays=1;
+if(SET.salonName==="Lina Nails")SET.salonName="Lina Chahrour";
+if(SET.servicesTxt&&SET.servicesTxt.includes("Russian Mani + Pedi")&&!SET.servicesTxt.includes("Dual Forms"))SET.servicesTxt=DEF_SET.servicesTxt;
 function saveSet(){localStorage.setItem("nailbook.settings",JSON.stringify(SET));}
 function serviceItems(){return(SET.servicesTxt||"").split("\n").map(s=>s.trim()).filter(Boolean).map(l=>{
   if(l.endsWith(":"))return{group:l.slice(0,-1)};
-  const m=l.match(/^(.+?)\s*=\s*([\d.,]+)\s*$/);
-  return m?{name:m[1].trim(),price:parseFloat(m[2].replace(",","."))}:{name:l,price:null};});}
+  const m=l.match(/^(.+?)\s*=\s*(.+)$/);
+  if(!m)return{name:l,price:null,priceTxt:null};
+  const raw=m[2].trim();
+  const num=/^[\d.,]+$/.test(raw)?parseFloat(raw.replace(",",".")):null;
+  return{name:m[1].trim(),price:num,priceTxt:raw};});}
+function priceDisp(it){return it.priceTxt==null?"":(it.price!=null?fmtMoney(it.price):it.priceTxt);}
 function serviceNames(){return serviceItems().filter(i=>i.name).map(i=>i.name);}
 function servicePrice(name){const it=serviceItems().find(i=>i.name===name);
   return it&&it.price!=null&&!isNaN(it.price)?it.price:null;}
@@ -433,6 +444,84 @@ async function makeReceiptImage(v,c){
   return new Promise(res=>cv.toBlob(res,"image/png"));}
 function openReceiptChooser(v,c){S._receipt={v,c};
   $("#rc-name").textContent=c.name;$("#rcbox").style.display="flex";}
+function openPriceChooser(){S._receipt={kind:"price"};
+  $("#rc-name").textContent="price list";$("#rcbox").style.display="flex";}
+const hasContactPicker=()=>!!(navigator.contacts&&navigator.contacts.select);
+async function pickContact(cb){
+  try{const sel=await navigator.contacts.select(["name","tel"],{multiple:false});
+    if(sel&&sel[0])cb(String((sel[0].name&&sel[0].name[0])||"").trim(),
+      String((sel[0].tel&&sel[0].tel[0])||"").trim());}
+  catch(e){/* user cancelled */}}
+function availText(){
+  const t=todayISO();
+  const ws=(+SET.workStart.slice(0,2))*60+(+SET.workStart.slice(3,5)||0);
+  const we=(+SET.workEnd.slice(0,2))*60+(+SET.workEnd.slice(3,5)||0);
+  const lines=[`💅 *${SET.salonName}* — free times this week`];
+  for(let i=0;i<7;i++){const d=addDaysISO(t,i);
+    const busy=apptsOn(d).filter(a=>a.status!=="cancelled").map(a=>[a.sort,a.sort+(+a.dur||60)]);
+    const free=[];
+    for(let m=ws;m+60<=we;m+=60){
+      if(i===0){const now=new Date();if(m<now.getHours()*60+now.getMinutes())continue;}
+      if(!busy.some(([s,e])=>m<e&&m+60>s))free.push(fmtMin(m));}
+    if(free.length)lines.push(`${fmtDate(d)}: ${free.join(", ")}`);}
+  if(lines.length===1)lines.push("Fully booked this week 💖");
+  lines.push("","Reply with the time you'd like and I'll book you in!");
+  return lines.join("\n");}
+function priceListText(){
+  const lines=[`💅 *${SET.salonName}* — price list`];
+  for(const it of serviceItems()){
+    if(it.group!==undefined)lines.push("",`*${it.group}*`);
+    else lines.push(`• ${it.name}${it.priceTxt!=null?` — ${priceDisp(it)}`:""}`);}
+  return lines.join("\n");}
+async function makePriceListImage(){
+  const W=720,P=64,items=serviceItems();
+  const cv=document.createElement("canvas");const ctx=cv.getContext("2d");
+  const F=s=>`${s}px -apple-system,'Segoe UI',Roboto,sans-serif`;
+  const nRows=items.filter(i=>i.name).length,nGroups=items.filter(i=>i.group!==undefined).length;
+  const topH=250,H=topH+30+nGroups*64+nRows*44+50;
+  cv.width=W*2;cv.height=H*2;ctx.scale(2,2);
+  ctx.fillStyle="#FFFFFF";ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle="#93355C";ctx.lineWidth=3;rr(ctx,14,14,W-28,H-28,20);ctx.stroke();
+  ctx.strokeStyle="#E9C9D9";ctx.lineWidth=1.5;rr(ctx,24,24,W-48,H-48,14);ctx.stroke();
+  const cx=W/2;
+  ctx.fillStyle="#F5E3EC";ctx.beginPath();ctx.arc(cx,96,46,0,7);ctx.fill();
+  let logo=null;try{logo=await dbGet("photos","receipt-logo");}catch(e){}
+  let drew=false;
+  if(logo&&logo.blob){const img=await new Promise(res=>{const i=new Image();i.onload=()=>res(i);i.onerror=()=>res(null);i.src=URL.createObjectURL(logo.blob);});
+    if(img){ctx.save();ctx.beginPath();ctx.arc(cx,96,42,0,7);ctx.clip();ctx.drawImage(img,cx-42,54,84,84);ctx.restore();drew=true;}}
+  if(!drew){ctx.font=F(46);ctx.textAlign="center";ctx.textBaseline="middle";
+    ctx.fillStyle="#93355C";ctx.fillText("💅",cx,98);ctx.textBaseline="alphabetic";}
+  ctx.textAlign="center";ctx.fillStyle="#2A2126";ctx.font="800 "+F(40);ctx.fillText(SET.salonName||"",cx,188);
+  ctx.fillStyle="#93355C";ctx.font="700 "+F(19);ctx.fillText("P R I C E   L I S T",cx,220);
+  ctx.textAlign="left";
+  let y=topH+30;
+  for(const it of items){
+    if(it.group!==undefined){y+=26;ctx.fillStyle="#93355C";ctx.font="800 "+F(26);
+      ctx.fillText(it.group.toUpperCase(),P,y);y+=38;continue;}
+    ctx.fillStyle="#2A2126";ctx.font=F(25);ctx.fillText(it.name,P,y);
+    if(it.priceTxt!=null){ctx.textAlign="right";ctx.font="700 "+F(it.price!=null?25:21);
+      ctx.fillText(priceDisp(it),W-P,y);ctx.textAlign="left";}
+    y+=44;}
+  return new Promise(res=>cv.toBlob(res,"image/png"));}
+function campListHTML(){
+  const msg=SET.campaignMsg||"";
+  const cs=S.clients.filter(c=>c.phone).sort((a,b)=>a.name.localeCompare(b.name));
+  if(!cs.length)return`<div class="hint">No clients with phone numbers yet.</div>`;
+  return cs.map(c=>{
+    const sent=S.campSent.has(c.id);
+    const m=fillTpl(msg,{name:c.name.split(" ")[0],date:"",time:"",service:""});
+    return`<div class="card clientrow" style="${sent?"opacity:.55":""}">
+      <div class="avatar">${esc(initials(c.name))}</div>
+      <div style="flex:1;min-width:0"><div style="font-weight:700">${esc(c.name)} ${sent?'<span class="badge b-ok">sent ✓</span>':""}</div>
+      <div class="meta">📞 ${esc(c.phone)}</div></div>
+      <a class="wa" data-act="camp-wa" data-id="${c.id}" href="${esc(waLink(c.phone,m))}" target="_blank" rel="noopener">💬</a></div>`;}).join("");}
+function renderCamp(){$("#ov-camp-in").innerHTML=`
+  <div class="ovbar"><button class="iconbtn" data-act="camp-close">‹</button><h2>📣 Campaign</h2></div>
+  <div class="card"><label>Message to your clients</label>
+  <textarea id="camp-msg" style="min-height:100px">${esc(SET.campaignMsg||"")}</textarea>
+  <div class="hint">{name} becomes her first name. Write the message once, then tap 💬 next to each client — WhatsApp opens with it ready, you press send. Sent clients get a ✓ (resets when you close the app).</div></div>
+  <div class="sect">Clients with a phone (${S.clients.filter(c=>c.phone).length})</div>
+  <div id="camp-list">${campListHTML()}</div>`;}
 function joinService(sel,custom){sel=String(sel||"").trim();custom=String(custom||"").trim();
   return sel&&custom?sel+" + "+custom:(sel||custom);}
 function splitServices(s){s=String(s||"").trim();const sels=[];
@@ -468,7 +557,7 @@ async function dbGet(st,k){const d=await db();return new Promise((res,rej)=>{con
 
 /* ---------------- state ---------------- */
 const S={view:"today",selDate:todayISO(),clients:[],visits:[],appts:[],search:"",log:[],
-  mFrom:addDaysISO(todayISO(),-6),mTo:todayISO(),mPreset:"7d",closingApptId:null,calOffset:0,
+  mFrom:addDaysISO(todayISO(),-6),mTo:todayISO(),mPreset:"7d",closingApptId:null,calOffset:0,campSent:new Set(),
   openClientId:null,fromAppt:null,editVisit:null,importRows:null,photoURLs:new Map()};
 async function loadAll(){[S.clients,S.visits,S.appts,S.log]=await Promise.all([dbAll("clients"),dbAll("visits"),dbAll("appts"),dbAll("log")]);
   S.log.sort((a,b)=>b.ts-a.ts);S.log=S.log.slice(0,3);}
@@ -630,6 +719,7 @@ function weekCalHTML(){
       ${S.calOffset!==0?`<button class="chip on" data-act="cal-today" style="padding:5px 10px">Today</button>`:""}
       <button class="iconbtn" data-act="cal-next" style="width:34px;height:34px" aria-label="Later weeks">›</button>
     </div>${weeks}
+    <div class="btnrow" style="margin:4px 0 10px"><button class="btn sec wide" data-act="avail-share">📤 Share my free hours on WhatsApp</button></div>
     <div class="wc-legend"><span><i style="background:var(--accent)"></i>confirmed</span>
     <span><i style="background:var(--warn-soft);box-shadow:inset 0 0 0 1.5px var(--warn)"></i>not confirmed</span>
     <span><i style="background:var(--line)"></i>cancelled</span></div></div>`;}
@@ -672,6 +762,7 @@ function viewClients(){
   const list=S.clients.filter(c=>!q||c.key.includes(q)||String(c.phone||"").includes(S.search.trim()))
     .sort((a,b)=>a.name.localeCompare(b.name));
   return`<div class="topbar"><h1>Clients</h1>
+    <button class="iconbtn" data-act="camp-open" title="Ad campaign">📣</button>
     <button class="iconbtn" data-act="new-client" title="Add client">＋</button></div>
   <main><div class="searchwrap"><input id="search" type="search" placeholder="Search name or phone…" data-act-input="search" value="${esc(S.search)}"></div>
   ${list.length?list.map(clientRow).join(""):
@@ -803,13 +894,18 @@ function viewSettings(){
       ${["USD","LBP"].includes(SET.currency)?"":`<option selected>${esc(SET.currency)}</option>`}</select></div>
     <div><label>WhatsApp country code</label><input id="set-cc" inputmode="numeric" value="${esc(SET.waCC)}"></div></div>
     <label>Dates in sheet are</label><select id="set-df"><option value="1" ${SET.dayFirst?"selected":""}>day/month/year</option><option value="0" ${SET.dayFirst?"":"selected"}>month/day/year</option></select>
+    <div class="kv"><div><label>Working hours — from</label><input id="set-ws" type="time" value="${esc(SET.workStart||"09:00")}"></div>
+    <div><label>to</label><input id="set-we" type="time" value="${esc(SET.workEnd||"19:00")}"></div></div>
+    <div class="hint">Used by “Share my free hours” under the calendar.</div>
     <label>Appointment reminder message</label>
     <textarea id="set-m1">${esc(SET.msgConfirm)}</textarea>
     <label>“Come back” message</label>
     <textarea id="set-m2">${esc(SET.msgComeback)}</textarea>
     <div class="hint">{name}, {date}, {time} and {service} are filled in automatically. In the “come back” message, {service} uses her next-visit request, or her last visit's services.</div>
-    <label>Service menu <span style="font-weight:400">(one per line — a line ending with “:” starts a group)</span></label>
+    <label>Service menu <span style="font-weight:400">(one per line — a line ending with “:” starts a group; add “= price” to show it on the shared price list)</span></label>
     <textarea id="set-services" style="min-height:150px">${esc(SET.servicesTxt)}</textarea>
+    <div class="btnrow" style="margin-bottom:0"><button class="btn sec wide" data-act="price-share">💅 Share price list (image or text)</button></div>
+    <div class="hint">Prices here are only for the shared list — they are never applied to visits automatically.</div>
     <div class="btnrow" style="margin-bottom:0"><button class="btn" data-act="save-settings">Save settings</button></div>
   </div>
   <div class="sect">Backup</div>
@@ -984,6 +1080,7 @@ function renderAppt(){const a=S.editAppt;
   <div class="card">
     <label>Client name</label><input id="a-name" autocomplete="off" placeholder="start typing — saved clients will appear" value="${esc(a.name)}">
     <div id="a-sugg" class="sugg"></div>
+    ${hasContactPicker()?`<div class="btnrow" style="margin:8px 0 0"><button class="btn sm sec" data-act="ct-appt">📇 Pick from phone contacts</button></div>`:""}
     <label>Date</label><input id="a-date" type="date" value="${esc(a.date)}">
     <div class="kv"><div><label>Time</label><input id="a-time" placeholder="e.g. 3:30 PM" value="${esc(a.time)}"></div>
     <div><label>Status</label><select id="a-status">
@@ -1186,6 +1283,8 @@ async function newClient(name,then){
 document.addEventListener("input",e=>{
   const t=e.target;
   if(t&&t.id==="a-name"){renderNameSugg(t.value);return;}
+  if(t&&t.id==="camp-msg"){SET.campaignMsg=t.value;saveSet();
+    clearTimeout(S._campT);S._campT=setTimeout(()=>{const l=$("#camp-list");if(l)l.innerHTML=campListHTML();},400);return;}
   if(t&&(t.id==="m-from"||t.id==="m-to")){
     if(t.id==="m-from")S.mFrom=t.value||S.mFrom;else S.mTo=t.value||S.mTo;
     S.mPreset="";updateMoneyView();return;}
@@ -1196,7 +1295,10 @@ document.addEventListener("input",e=>{
 document.addEventListener("click",async e=>{
   const b=e.target.closest("[data-act]");if(!b)return;
   const act=b.dataset.act,id=b.dataset.id;
-  if(b.tagName==="A")return; /* let links behave */
+  if(b.tagName==="A"){
+    if(act==="camp-wa"){S.campSent.add(b.dataset.id);
+      setTimeout(()=>{const l=$("#camp-list");if(l)l.innerHTML=campListHTML();},400);}
+    return; /* let links behave */}
   switch(act){
     case"tab":S.view=b.dataset.id;render();window.scrollTo(0,0);break;
     case"day":S.selDate=b.dataset.d;render();break;
@@ -1209,6 +1311,19 @@ document.addEventListener("click",async e=>{
     case"cal-open":$("#ov-cal-in").innerHTML=calOverlayHTML();
       $("#ov-cal").classList.add("open");window.scrollTo(0,0);break;
     case"cal-close":$("#ov-cal").classList.remove("open");break;
+    case"camp-open":renderCamp();$("#ov-camp").classList.add("open");window.scrollTo(0,0);break;
+    case"camp-close":$("#ov-camp").classList.remove("open");break;
+    case"avail-share":openWA("https://wa.me/?text="+encodeURIComponent(availText()));break;
+    case"price-share":openPriceChooser();break;
+    case"ct-new":{if(!hasContactPicker()){toast("Contact picking isn't allowed on this phone/browser (iPhones don't support it) — type it manually");break;}
+      await pickContact((n,tel)=>{if(n)$("#nc-name").value=n;if(tel)$("#nc-phone").value=tel;});break;}
+    case"ct-appt":{await pickContact(async(n,tel)=>{
+      if(!n&&!tel)return;
+      if(n){$("#a-name").value=n;renderNameSugg(n);}
+      let c=clientByKey(nameKey(n));
+      if(!c&&n)await newClient(n,nc=>{c=nc;});
+      if(c&&tel&&!c.phone){c.phone=tel;await dbPut("clients",c);}
+      toast(c?"Contact linked to her client card ✓":"Name filled");});break;}
     case"cal-prev":case"cal-next":case"cal-today":{
       if(act==="cal-today")S.calOffset=0;
       else S.calOffset=Math.max(-8,Math.min(26,S.calOffset+(act==="cal-next"?3:-3)));
@@ -1342,19 +1457,20 @@ document.addEventListener("click",async e=>{
       openReceiptChooser(vv,c);break;}
     case"rc-cancel":$("#rcbox").style.display="none";S._receipt=null;break;
     case"rc-text":{const rc=S._receipt;$("#rcbox").style.display="none";if(!rc)break;
+      if(rc.kind==="price"){openWA("https://wa.me/?text="+encodeURIComponent(priceListText()));S._receipt=null;break;}
       if(!rc.c.phone){toast("Add her phone number first (open her card)");break;}
       openWA(waLink(rc.c.phone,receiptText(rc.v,rc.c)));S._receipt=null;break;}
     case"rc-img":{const rc=S._receipt;$("#rcbox").style.display="none";if(!rc)break;
-      toast("Preparing receipt…");
+      toast(rc.kind==="price"?"Preparing price list…":"Preparing receipt…");
       try{
-        const blob=await makeReceiptImage(rc.v,rc.c);
-        const file=new File([blob],`receipt-${rc.v.date}.png`,{type:"image/png"});
+        const blob=rc.kind==="price"?await makePriceListImage():await makeReceiptImage(rc.v,rc.c);
+        const file=new File([blob],rc.kind==="price"?"price-list.png":`receipt-${rc.v.date}.png`,{type:"image/png"});
         if(navigator.canShare&&navigator.canShare({files:[file]})){
           try{await navigator.share({files:[file],title:"Receipt"});}catch(e){/*viewer cancelled*/}}
         else{const a=document.createElement("a");a.href=URL.createObjectURL(blob);
           a.download=file.name;document.body.appendChild(a);a.click();a.remove();
           toast("Image downloaded — attach it in her WhatsApp chat");
-          if(rc.c.phone)openWA(waLink(rc.c.phone,""));}
+          if(rc.c&&rc.c.phone)openWA(waLink(rc.c.phone,""));}
       }catch(e){toast("Couldn't build the image — try the text receipt");}
       S._receipt=null;break;}
     case"save-visit":{const ev=S.editVisit;if(!ev)break;const v=ev.v;
@@ -1421,6 +1537,7 @@ document.addEventListener("click",async e=>{
       SET.currency=$("#set-cur").value.trim();SET.waCC=$("#set-cc").value.replace(/\D/g,"");
       SET.salonName=$("#set-salon").value.trim();
       SET.dayFirst=$("#set-df").value==="1";
+      SET.workStart=$("#set-ws").value||"09:00";SET.workEnd=$("#set-we").value||"19:00";
       SET.msgConfirm=$("#set-m1").value;SET.msgComeback=$("#set-m2").value;
       SET.servicesTxt=$("#set-services").value;
       saveSet();toast("Settings saved ✓");break;}
