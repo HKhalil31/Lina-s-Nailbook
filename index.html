@@ -337,7 +337,8 @@ function parseDSV(text){ /* CSV or TSV, quote-aware */
 
 /* ---------------- settings ---------------- */
 const DEF_SET={sheetUrl:"",sheetTab:"Lina Schedule",artist:"",dayFirst:true,currency:"USD",waCC:"961",confirmDays:1,salonName:"Lina Chahrour",
-  workStart:"09:00",workEnd:"19:00",dayHours:{},
+  workStart:"09:00",workEnd:"19:00",
+  week:{0:{s:"09:00",e:"19:00",off:false},1:{s:"09:00",e:"19:00",off:false},2:{s:"09:00",e:"19:00",off:false},3:{s:"09:00",e:"19:00",off:false},4:{s:"09:00",e:"19:00",off:false},5:{s:"09:00",e:"19:00",off:false},6:{s:"09:00",e:"19:00",off:false}},
   campaignMsg:"Hi {name} 💅 We have something special for you this week — reply to book your spot!",
   msgConfirm:"Hi {name} 💅 A friendly reminder of your appointment on {date} at {time}. See you soon!",
   msgComeback:"Hi {name} 💅 It's been a while since your last visit — ready for a refresh? Let me know when you'd like to come in!",
@@ -350,7 +351,9 @@ if(SET.waCC==="962")SET.waCC="961";
 if(SET.confirmDays===3)SET.confirmDays=1;
 if(SET.salonName==="Lina Nails")SET.salonName="Lina Chahrour";
 if(SET.servicesTxt&&SET.servicesTxt.includes("Russian Mani + Pedi")&&!SET.servicesTxt.includes("Dual Forms"))SET.servicesTxt=DEF_SET.servicesTxt;
-if(SET.dayHours)for(const k of Object.keys(SET.dayHours))if(k<todayISO())delete SET.dayHours[k];
+if(!SET.week||!SET.week[0]){SET.week={};
+  for(let i=0;i<7;i++)SET.week[i]={s:SET.workStart||"09:00",e:SET.workEnd||"19:00",off:false};}
+delete SET.dayHours;
 function saveSet(){localStorage.setItem("nailbook.settings",JSON.stringify(SET));}
 function serviceItems(){return(SET.servicesTxt||"").split("\n").map(s=>s.trim()).filter(Boolean).map(l=>{
   if(l.endsWith(":"))return{group:l.slice(0,-1)};
@@ -463,8 +466,9 @@ async function pickContact(cb){
       String((sel[0].tel&&sel[0].tel[0])||"").trim());}
   catch(e){/* user cancelled */}}
 function toMin(t){return(+String(t).slice(0,2))*60+(+String(t).slice(3,5)||0);}
-function dayWork(d){const o=(SET.dayHours||{})[d];
-  return{s:(o&&o.s)||SET.workStart||"09:00",e:(o&&o.e)||SET.workEnd||"19:00",off:!!(o&&o.off)};}
+function dayWork(d){const wd=new Date(d+"T12:00:00").getDay();
+  const o=(SET.week||{})[wd]||{};
+  return{s:o.s||"09:00",e:o.e||"19:00",off:!!o.off};}
 function availText(c){
   const t=todayISO();
   const lines=[c?`Hi ${c.name.split(" ")[0]} 💅 here are my free times this week:`
@@ -517,24 +521,26 @@ async function makePriceListImage(){
       ctx.fillText(priceDisp(it),W-P,y);ctx.textAlign="left";}
     y+=44;}
   return new Promise(res=>cv.toBlob(res,"image/png"));}
+const DAYFULL=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 function renderHours(){
-  const rows=Object.keys(S._dh).sort().map(d=>{const h=S._dh[d];const dt=new Date(d+"T12:00:00");
+  const order=[1,2,3,4,5,6,0];
+  const rows=order.map(i=>{const h=S._dh[i];
     return`<div class="card" style="padding:10px 14px;margin-bottom:8px">
       <div style="display:flex;align-items:center;gap:8px">
-        <div style="min-width:80px;font-weight:700;font-size:14px">${d===todayISO()?"Today":DOW[dt.getDay()]+" "+dt.getDate()}</div>
-        ${h.off?`<div style="flex:1;color:var(--muted);font-weight:600">Day off</div>`
-        :`<input type="time" id="dh-s-${d}" value="${esc(h.s)}" style="flex:1;padding:8px"><span style="color:var(--muted)">–</span>
-          <input type="time" id="dh-e-${d}" value="${esc(h.e)}" style="flex:1;padding:8px">`}
-        <button class="chip ${h.off?"on":""}" data-act="dh-off" data-d="${d}">Off</button>
+        <div style="min-width:88px;font-weight:700;font-size:14px">${DAYFULL[i]}</div>
+        ${h.off?`<div style="flex:1;color:var(--muted);font-weight:600">Closed</div>`
+        :`<input type="time" id="dh-s-${i}" value="${esc(h.s)}" style="flex:1;padding:8px"><span style="color:var(--muted)">–</span>
+          <input type="time" id="dh-e-${i}" value="${esc(h.e)}" style="flex:1;padding:8px">`}
+        <button class="chip ${h.off?"on":""}" data-act="dh-off" data-d="${i}">Off</button>
       </div></div>`;}).join("");
   $("#ov-hours-in").innerHTML=`
-  <div class="ovbar"><button class="iconbtn" data-act="hours-close">‹</button><h2>🕐 My working hours</h2></div>
-  <div class="hint" style="margin-bottom:10px">These feed the “free hours” message automatically — booked appointments are removed for you. Days start from your default (${esc(SET.workStart)}–${esc(SET.workEnd)}, set in Settings); change any day here or mark it Off.</div>
+  <div class="ovbar"><button class="iconbtn" data-act="hours-close">‹</button><h2>🕐 My schedule</h2></div>
+  <div class="hint" style="margin-bottom:10px">Your working week — the same every week. The “free hours” message is built from these times automatically, with booked appointments removed. Change it here anytime.</div>
   ${rows}
-  <div class="btnrow"><button class="btn wide" data-act="hours-save">Save hours</button></div>`;}
-function collectDh(){for(const d of Object.keys(S._dh)){if(S._dh[d].off)continue;
-  const s=document.getElementById(`dh-s-${d}`),e=document.getElementById(`dh-e-${d}`);
-  if(s&&s.value)S._dh[d].s=s.value;if(e&&e.value)S._dh[d].e=e.value;}}
+  <div class="btnrow"><button class="btn wide" data-act="hours-save">Save my schedule</button></div>`;}
+function collectDh(){for(const i of Object.keys(S._dh)){if(S._dh[i].off)continue;
+  const s=document.getElementById(`dh-s-${i}`),e=document.getElementById(`dh-e-${i}`);
+  if(s&&s.value)S._dh[i].s=s.value;if(e&&e.value)S._dh[i].e=e.value;}}
 function genericCampMsg(){
   return fillTpl(SET.campaignMsg||"",{name:"",date:"",time:"",service:""})
     .replace(/\s+([,.!؟?])/g,"$1").replace(/ {2,}/g," ").trim();}
@@ -773,7 +779,7 @@ function weekCalHTML(){
       <button class="iconbtn" data-act="cal-next" style="width:34px;height:34px" aria-label="Later weeks">›</button>
     </div>${weeks}
     <div class="btnrow" style="margin:4px 0 10px"><button class="btn sec" data-act="avail-share">📤 Share free hours</button>
-    <button class="btn sec" data-act="hours-open">🕐 My hours</button></div>
+    <button class="btn sec" data-act="hours-open">🕐 My schedule</button></div>
     <div class="wc-legend"><span><i style="background:var(--accent)"></i>confirmed</span>
     <span><i style="background:var(--warn-soft);box-shadow:inset 0 0 0 1.5px var(--warn)"></i>not confirmed</span>
     <span><i style="background:var(--line)"></i>cancelled</span></div></div>`;}
@@ -948,9 +954,7 @@ function viewSettings(){
       ${["USD","LBP"].includes(SET.currency)?"":`<option selected>${esc(SET.currency)}</option>`}</select></div>
     <div><label>WhatsApp country code</label><input id="set-cc" inputmode="numeric" value="${esc(SET.waCC)}"></div></div>
     <label>Dates in sheet are</label><select id="set-df"><option value="1" ${SET.dayFirst?"selected":""}>day/month/year</option><option value="0" ${SET.dayFirst?"":"selected"}>month/day/year</option></select>
-    <div class="kv"><div><label>Default working hours — from</label><input id="set-ws" type="time" value="${esc(SET.workStart||"09:00")}"></div>
-    <div><label>to</label><input id="set-we" type="time" value="${esc(SET.workEnd||"19:00")}"></div></div>
-    <div class="hint">The starting point for every day. For flexible days, use “🕐 My hours” under the calendar to change or close individual days.</div>
+    <div class="hint">Your weekly working hours are set in one place: <b>🕐 My schedule</b>, under the calendar on the Today page.</div>
     <label>Appointment reminder message</label>
     <textarea id="set-m1">${esc(SET.msgConfirm)}</textarea>
     <label>“Come back” message</label>
@@ -1397,15 +1401,13 @@ document.addEventListener("click",async e=>{
       $("#avbox").style.display="flex";break;}
     case"av-cancel":$("#avbox").style.display="none";S._avail=null;break;
     case"hours-open":{$("#avbox").style.display="none";
-      S._dh={};for(let i=0;i<7;i++){const d=addDaysISO(todayISO(),i);S._dh[d]={...dayWork(d)};}
+      S._dh={};for(let i=0;i<7;i++)S._dh[i]={...(SET.week[i]||{s:"09:00",e:"19:00",off:false})};
       renderHours();$("#ov-hours").classList.add("open");window.scrollTo(0,0);break;}
     case"hours-close":$("#ov-hours").classList.remove("open");break;
-    case"dh-off":{collectDh();const d=b.dataset.d;S._dh[d].off=!S._dh[d].off;renderHours();break;}
+    case"dh-off":{collectDh();const i=b.dataset.d;S._dh[i].off=!S._dh[i].off;renderHours();break;}
     case"hours-save":{collectDh();
-      SET.dayHours=SET.dayHours||{};
-      for(const k of Object.keys(SET.dayHours))if(k<todayISO())delete SET.dayHours[k];
-      for(const d of Object.keys(S._dh))SET.dayHours[d]={s:S._dh[d].s,e:S._dh[d].e,off:S._dh[d].off};
-      saveSet();$("#ov-hours").classList.remove("open");toast("Hours saved ✓");break;}
+      for(const i of Object.keys(S._dh))SET.week[i]={s:S._dh[i].s,e:S._dh[i].e,off:S._dh[i].off};
+      saveSet();$("#ov-hours").classList.remove("open");toast("Schedule saved ✓");break;}
     case"av-send":{const txt=$("#av-text").value.trim();
       if(!txt){toast("The message is empty");break;}
       const c=S._avail&&S._avail.c;
@@ -1634,7 +1636,6 @@ document.addEventListener("click",async e=>{
       SET.currency=$("#set-cur").value.trim();SET.waCC=$("#set-cc").value.replace(/\D/g,"");
       SET.salonName=$("#set-salon").value.trim();
       SET.dayFirst=$("#set-df").value==="1";
-      SET.workStart=$("#set-ws").value||"09:00";SET.workEnd=$("#set-we").value||"19:00";
       SET.msgConfirm=$("#set-m1").value;SET.msgComeback=$("#set-m2").value;
       SET.servicesTxt=$("#set-services").value;
       saveSet();toast("Settings saved ✓");break;}
