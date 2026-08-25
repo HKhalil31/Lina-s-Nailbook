@@ -269,8 +269,9 @@ pre.paste-eg{background:var(--surface);border:1.5px solid var(--line);border-rad
     <div style="font-weight:700;margin-bottom:10px" id="av-title">Free hours</div>
     <textarea id="av-text" style="min-height:200px;font-size:14px"></textarea>
     <div class="hint">Check it, edit anything, then send.</div>
-    <div class="btnrow" style="margin-bottom:0"><button class="btn" data-act="av-send" id="av-send-btn">💬 Send</button>
+    <div class="btnrow"><button class="btn" data-act="av-send" id="av-send-btn">💬 Send</button>
     <button class="btn sec" data-act="av-cancel">Cancel</button></div>
+    <div class="btnrow" style="margin:0"><button class="btn sec wide" data-act="av-send-img">🖼 Send as picture instead</button></div>
   </div></div>
 <div id="rcbox" style="position:fixed;inset:0;z-index:28;display:none;align-items:center;justify-content:center;background:rgba(20,10,16,.5);padding:20px">
   <div class="card" style="max-width:340px;width:100%;margin:0">
@@ -337,7 +338,7 @@ function parseDSV(text){ /* CSV or TSV, quote-aware */
 
 /* ---------------- settings ---------------- */
 const DEF_SET={sheetUrl:"",sheetTab:"Lina Schedule",artist:"",dayFirst:true,currency:"USD",waCC:"961",confirmDays:1,salonName:"Lina Chahrour",
-  workStart:"09:00",workEnd:"19:00",gClientId:"",driveAuto:true,lastDriveBackup:"",
+  workStart:"09:00",workEnd:"19:00",gClientId:"",driveAuto:true,lastDriveBackup:"",priceImgIds:[],
   week:{0:{s:"09:00",e:"19:00",off:false},1:{s:"09:00",e:"19:00",off:false},2:{s:"09:00",e:"19:00",off:false},3:{s:"09:00",e:"19:00",off:false},4:{s:"09:00",e:"19:00",off:false},5:{s:"09:00",e:"19:00",off:false},6:{s:"09:00",e:"19:00",off:false}},
   campaignMsg:"Hi {name} 💅 We have something special for you this week — reply to book your spot!",
   msgConfirm:"Hi {name} 💅 A friendly reminder of your appointment on {date} at {time}. See you soon!",
@@ -468,23 +469,71 @@ async function pickContact(cb){
 function toMin(t){return(+String(t).slice(0,2))*60+(+String(t).slice(3,5)||0);}
 function dayWork(d){const wd=new Date(d+"T12:00:00").getDay();
   const o=(SET.week||{})[wd]||{};
-  return{s:o.s||"09:00",e:o.e||"19:00",off:!!o.off};}
-function availText(c){
-  const t=todayISO();
-  const lines=[c?`Hi ${c.name.split(" ")[0]} 💅 here are my free times this week:`
-    :`💅 *${SET.salonName}* — free times this week`];
+  return{s:o.s||"09:00",e:o.e||"19:00",off:!!o.off,
+    gap:!!o.gap,s2:o.s2||"16:00",e2:o.e2||"19:00"};}
+function availData(){
+  const t=todayISO(),now=new Date(),nowMin=now.getHours()*60+now.getMinutes();
+  const days=[];
   for(let i=0;i<7;i++){const d=addDaysISO(t,i);
     const h=dayWork(d);if(h.off)continue;
-    const ws=toMin(h.s),we=toMin(h.e);
     const busy=apptsOn(d).filter(a=>a.status!=="cancelled").map(a=>[a.sort,a.sort+(+a.dur||60)]);
-    const free=[];
-    for(let m=ws;m+60<=we;m+=60){
-      if(i===0){const now=new Date();if(m<now.getHours()*60+now.getMinutes())continue;}
-      if(!busy.some(([s,e])=>m<e&&m+60>s))free.push(fmtMin(m));}
-    if(free.length)lines.push(`${fmtDate(d)}: ${free.join(", ")}`);}
+    const ranges=[[toMin(h.s),toMin(h.e)]];
+    if(h.gap)ranges.push([toMin(h.s2),toMin(h.e2)]);
+    const set=new Set();
+    for(const[ws,we]of ranges){const last=we-90; /* last call: 1.5h before closing */
+      for(let m=ws;m<=last;m+=60)set.add(m);
+      if(last>=ws)set.add(last);}
+    const free=[...set].sort((a,b)=>a-b).filter(m=>{
+      if(i===0&&m<nowMin)return false;
+      return !busy.some(([s,e])=>m<e&&m+60>s);});
+    if(free.length)days.push({d,label:fmtDate(d),slots:free.map(fmtMin)});}
+  return days;}
+function availText(c){
+  const lines=[c?`Hi ${c.name.split(" ")[0]} 💅 here are my free times this week:`
+    :`💅 *${SET.salonName}* — free times this week`];
+  for(const day of availData())lines.push(`${day.label}: ${day.slots.join(", ")}`);
   if(lines.length===1)lines.push("Fully booked this week 💖");
   lines.push("","Reply with the time you'd like and I'll book you in!");
   return lines.join("\n");}
+async function makeAvailImage(){
+  const W=720,P=64,days=availData();
+  const cv=document.createElement("canvas");const ctx=cv.getContext("2d");
+  const F=s=>`${s}px -apple-system,'Segoe UI',Roboto,sans-serif`;
+  ctx.font=F(24);
+  const blocks=days.map(day=>{const lines=[];let cur="";
+    for(const s of day.slots){const t2=cur?cur+"   ·   "+s:s;
+      if(ctx.measureText(t2).width>W-2*P&&cur){lines.push(cur);cur=s;}else cur=t2;}
+    if(cur)lines.push(cur);
+    return{label:day.label,lines};});
+  const topH=250;
+  const bodyH=blocks.length?blocks.reduce((s,b)=>s+36+b.lines.length*32+16,0):60;
+  const H=topH+24+bodyH+80;
+  cv.width=W*2;cv.height=H*2;ctx.scale(2,2);
+  ctx.fillStyle="#FFFFFF";ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle="#93355C";ctx.lineWidth=3;rr(ctx,14,14,W-28,H-28,20);ctx.stroke();
+  ctx.strokeStyle="#E9C9D9";ctx.lineWidth=1.5;rr(ctx,24,24,W-48,H-48,14);ctx.stroke();
+  const cx=W/2;
+  ctx.fillStyle="#F5E3EC";ctx.beginPath();ctx.arc(cx,96,46,0,7);ctx.fill();
+  let logo=null;try{logo=await dbGet("photos","receipt-logo");}catch(e){}
+  let drew=false;
+  if(logo&&logo.blob){const img=await new Promise(res=>{const i=new Image();i.onload=()=>res(i);i.onerror=()=>res(null);i.src=URL.createObjectURL(logo.blob);});
+    if(img){ctx.save();ctx.beginPath();ctx.arc(cx,96,42,0,7);ctx.clip();ctx.drawImage(img,cx-42,54,84,84);ctx.restore();drew=true;}}
+  if(!drew){ctx.font=F(46);ctx.textAlign="center";ctx.textBaseline="middle";
+    ctx.fillStyle="#93355C";ctx.fillText("💅",cx,98);ctx.textBaseline="alphabetic";}
+  ctx.textAlign="center";ctx.fillStyle="#2A2126";ctx.font="800 "+F(40);ctx.fillText(SET.salonName||"",cx,188);
+  ctx.fillStyle="#93355C";ctx.font="700 "+F(19);ctx.fillText("A V A I L A B L E   T I M E S",cx,220);
+  ctx.textAlign="left";
+  let y=topH+24;
+  if(!blocks.length){ctx.fillStyle="#7C6B75";ctx.font=F(26);ctx.textAlign="center";
+    ctx.fillText("Fully booked this week 💖",cx,y+20);ctx.textAlign="left";}
+  for(const b of blocks){
+    ctx.fillStyle="#93355C";ctx.font="800 "+F(25);ctx.fillText(b.label,P,y+8);y+=36;
+    ctx.fillStyle="#2A2126";ctx.font=F(24);
+    for(const l of b.lines){ctx.fillText(l,P,y+4);y+=32;}
+    y+=16;}
+  ctx.fillStyle="#7C6B75";ctx.font=F(22);ctx.textAlign="center";
+  ctx.fillText("Reply with the time you'd like 💅",cx,H-42);ctx.textAlign="left";
+  return new Promise(res=>cv.toBlob(res,"image/png"));}
 function priceListText(){
   const lines=[`💅 *${SET.salonName}* — price list`];
   for(const it of serviceItems()){
@@ -532,15 +581,23 @@ function renderHours(){
         :`<input type="time" id="dh-s-${i}" value="${esc(h.s)}" style="flex:1;padding:8px"><span style="color:var(--muted)">–</span>
           <input type="time" id="dh-e-${i}" value="${esc(h.e)}" style="flex:1;padding:8px">`}
         <button class="chip ${h.off?"on":""}" data-act="dh-off" data-d="${i}">Off</button>
-      </div></div>`;}).join("");
+      </div>
+      ${h.off?"":`<div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+        <button class="chip ${h.gap?"on":""}" data-act="dh-gap" data-d="${i}" style="min-width:88px">${h.gap?"✕ gap":"＋ gap"}</button>
+        ${h.gap?`<input type="time" id="dh-s2-${i}" value="${esc(h.s2)}" style="flex:1;padding:8px"><span style="color:var(--muted)">–</span>
+          <input type="time" id="dh-e2-${i}" value="${esc(h.e2)}" style="flex:1;padding:8px"><span style="width:52px"></span>`
+        :`<div style="flex:1;color:var(--muted);font-size:12px">one block — add a gap to split the day (e.g. 9–1 & 4–7)</div>`}
+      </div>`}</div>`;}).join("");
   $("#ov-hours-in").innerHTML=`
   <div class="ovbar"><button class="iconbtn" data-act="hours-close">‹</button><h2>🕐 My schedule</h2></div>
-  <div class="hint" style="margin-bottom:10px">Your working week — the same every week. The “free hours” message is built from these times automatically, with booked appointments removed. Change it here anytime.</div>
+  <div class="hint" style="margin-bottom:10px">Your working week — the same every week. Free-hours messages are built from these times minus booked appointments. <b>Last call is 1.5 h before each closing</b> (open till 7:00 → last slot 5:30). Use ＋ gap to split a day, e.g. 9–1 & 4–7.</div>
   ${rows}
   <div class="btnrow"><button class="btn wide" data-act="hours-save">Save my schedule</button></div>`;}
 function collectDh(){for(const i of Object.keys(S._dh)){if(S._dh[i].off)continue;
   const s=document.getElementById(`dh-s-${i}`),e=document.getElementById(`dh-e-${i}`);
-  if(s&&s.value)S._dh[i].s=s.value;if(e&&e.value)S._dh[i].e=e.value;}}
+  if(s&&s.value)S._dh[i].s=s.value;if(e&&e.value)S._dh[i].e=e.value;
+  const s2=document.getElementById(`dh-s2-${i}`),e2=document.getElementById(`dh-e2-${i}`);
+  if(s2&&s2.value)S._dh[i].s2=s2.value;if(e2&&e2.value)S._dh[i].e2=e2.value;}}
 function genericCampMsg(){
   return fillTpl(SET.campaignMsg||"",{name:"",date:"",time:"",service:""})
     .replace(/\s+([,.!؟?])/g,"$1").replace(/ {2,}/g," ").trim();}
@@ -963,7 +1020,10 @@ function viewSettings(){
     <label>Service menu <span style="font-weight:400">(one per line — a line ending with “:” starts a group; add “= price” to show it on the shared price list)</span></label>
     <textarea id="set-services" style="min-height:150px">${esc(SET.servicesTxt)}</textarea>
     <div class="btnrow" style="margin-bottom:0"><button class="btn sec wide" data-act="price-share">💅 Share price list (image or text)</button></div>
-    <div class="hint">Prices here are only for the shared list — they are never applied to visits automatically.</div>
+    <div class="btnrow" style="margin-bottom:0"><button class="btn sec" data-act="plimg-pick">🖼 Use my own price-list pages</button>
+    ${(SET.priceImgIds||[]).length?`<button class="btn sec" data-act="plimg-clear">✕ Remove (${SET.priceImgIds.length})</button>`:""}</div>
+    <input type="file" id="file-plimg" accept="image/*" multiple hidden>
+    <div class="hint">${(SET.priceImgIds||[]).length?`Sharing sends your ${SET.priceImgIds.length} uploaded page${SET.priceImgIds.length>1?"s":""} instead of the generated design.`:"Prices here are only for the shared list — never applied to visits automatically. Upload your own designed pages above to send those instead."}</div>
     <div class="btnrow" style="margin-bottom:0"><button class="btn" data-act="save-settings">Save settings</button></div>
   </div>
   <div class="sect">Backup</div>
@@ -1465,14 +1525,30 @@ document.addEventListener("click",async e=>{
       renderHours();$("#ov-hours").classList.add("open");window.scrollTo(0,0);break;}
     case"hours-close":$("#ov-hours").classList.remove("open");break;
     case"dh-off":{collectDh();const i=b.dataset.d;S._dh[i].off=!S._dh[i].off;renderHours();break;}
+    case"dh-gap":{collectDh();const i=b.dataset.d;S._dh[i].gap=!S._dh[i].gap;renderHours();break;}
     case"hours-save":{collectDh();
-      for(const i of Object.keys(S._dh))SET.week[i]={s:S._dh[i].s,e:S._dh[i].e,off:S._dh[i].off};
+      for(const i of Object.keys(S._dh))SET.week[i]={s:S._dh[i].s,e:S._dh[i].e,off:S._dh[i].off,
+        gap:S._dh[i].gap,s2:S._dh[i].s2,e2:S._dh[i].e2};
       saveSet();$("#ov-hours").classList.remove("open");toast("Schedule saved ✓");break;}
     case"av-send":{const txt=$("#av-text").value.trim();
       if(!txt){toast("The message is empty");break;}
       const c=S._avail&&S._avail.c;
       $("#avbox").style.display="none";S._avail=null;
       openWA(c&&c.phone?waLink(c.phone,txt):"https://wa.me/?text="+encodeURIComponent(txt));break;}
+    case"av-send-img":{const c=S._avail&&S._avail.c;
+      $("#avbox").style.display="none";S._avail=null;
+      toast("Preparing picture…");
+      try{
+        const blob=await makeAvailImage();
+        const file=new File([blob],"free-hours.png",{type:"image/png"});
+        if(navigator.canShare&&navigator.canShare({files:[file]})){
+          try{await navigator.share({files:[file],title:"Free hours"});}catch(e){}}
+        else{const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+          a.download="free-hours.png";document.body.appendChild(a);a.click();a.remove();
+          toast("Picture downloaded — attach it in WhatsApp");
+          if(c&&c.phone)openWA(waLink(c.phone,""));}
+      }catch(e){toast("Couldn't build the picture");}
+      break;}
     case"price-share":openPriceChooser();break;
     case"ct-new":{if(!hasContactPicker()){toast("Contact picking isn't allowed on this phone/browser (iPhones don't support it) — type it manually");break;}
       await pickContact((n,tel)=>{if(n)$("#nc-name").value=n;if(tel)$("#nc-phone").value=tel;});break;}
@@ -1622,6 +1698,17 @@ document.addEventListener("click",async e=>{
     case"rc-img":{const rc=S._receipt;$("#rcbox").style.display="none";if(!rc)break;
       toast(rc.kind==="price"?"Preparing price list…":"Preparing receipt…");
       try{
+        if(rc.kind==="price"&&(SET.priceImgIds||[]).length){
+          const files=[];
+          for(const id2 of SET.priceImgIds){const p=await dbGet("photos",id2);
+            if(p&&p.blob)files.push(new File([p.blob],`price-list-${files.length+1}.jpg`,{type:p.blob.type||"image/jpeg"}));}
+          if(files.length){
+            if(navigator.canShare&&navigator.canShare({files})){
+              try{await navigator.share({files,title:"Price list"});}catch(e){}}
+            else{for(const f of files){const a=document.createElement("a");
+              a.href=URL.createObjectURL(f);a.download=f.name;document.body.appendChild(a);a.click();a.remove();}
+              toast("Pages downloaded — attach them in WhatsApp");}
+            S._receipt=null;break;}}
         const blob=rc.kind==="price"?await makePriceListImage():await makeReceiptImage(rc.v,rc.c);
         const file=new File([blob],rc.kind==="price"?"price-list.png":`receipt-${rc.v.date}.png`,{type:"image/png"});
         if(navigator.canShare&&navigator.canShare({files:[file]})){
@@ -1711,6 +1798,9 @@ document.addEventListener("click",async e=>{
     case"tgl-driveauto":SET.driveAuto=SET.driveAuto===false?true:false;
       b.classList.toggle("on",SET.driveAuto!==false);saveSet();break;
     case"logo-pick":$("#file-logo").click();break;
+    case"plimg-pick":$("#file-plimg").click();break;
+    case"plimg-clear":{for(const id2 of SET.priceImgIds||[])await dbDel("photos",id2);
+      SET.priceImgIds=[];saveSet();render();toast("Your pages removed — the generated design will be used");break;}
     case"logo-clear":await dbDel("photos","receipt-logo");toast("Logo removed — receipts show 💅 again");break;
     case"wipe":{if(!confirm("Delete ALL clients, visits, photos and appointments from this device?"))break;
       if(!confirm("Really sure? There is no undo. (Export a backup first!)"))break;
@@ -1733,6 +1823,15 @@ document.addEventListener("change",async e=>{
     S.mPreset="";updateMoneyView();}
   if(t.id==="file-csv"&&t.files[0]){beginImport(parseDSV(await t.files[0].text()));t.value="";}
   if(t.id==="file-restore"&&t.files[0]){await restoreBackup(t.files[0]);t.value="";}
+  if(t.id==="file-plimg"&&t.files.length){
+    toast("Saving your pages…");
+    for(const id2 of SET.priceImgIds||[])await dbDel("photos",id2);
+    const ids=[];
+    for(const f of[...t.files]){
+      try{const blob=await shrinkImage(f);const id2="plimg-"+uid();
+        await dbPut("photos",{id:id2,blob});ids.push(id2);}catch(e){}}
+    SET.priceImgIds=ids;saveSet();t.value="";render();
+    toast(ids.length?`${ids.length} page${ids.length>1?"s":""} saved — sharing uses them now ✓`:"Couldn't read those images");}
   if(t.id==="file-logo"&&t.files[0]){
     try{const blob=await shrinkImage(t.files[0]);
       await dbPut("photos",{id:"receipt-logo",blob});toast("Logo saved — it will appear on image receipts ✓");}
