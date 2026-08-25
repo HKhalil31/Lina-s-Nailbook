@@ -337,7 +337,7 @@ function parseDSV(text){ /* CSV or TSV, quote-aware */
 
 /* ---------------- settings ---------------- */
 const DEF_SET={sheetUrl:"",sheetTab:"Lina Schedule",artist:"",dayFirst:true,currency:"USD",waCC:"961",confirmDays:1,salonName:"Lina Chahrour",
-  workStart:"09:00",workEnd:"19:00",
+  workStart:"09:00",workEnd:"19:00",gClientId:"",driveAuto:true,lastDriveBackup:"",
   week:{0:{s:"09:00",e:"19:00",off:false},1:{s:"09:00",e:"19:00",off:false},2:{s:"09:00",e:"19:00",off:false},3:{s:"09:00",e:"19:00",off:false},4:{s:"09:00",e:"19:00",off:false},5:{s:"09:00",e:"19:00",off:false},6:{s:"09:00",e:"19:00",off:false}},
   campaignMsg:"Hi {name} 💅 We have something special for you this week — reply to book your spot!",
   msgConfirm:"Hi {name} 💅 A friendly reminder of your appointment on {date} at {time}. See you soon!",
@@ -972,6 +972,14 @@ function viewSettings(){
     <div class="btnrow"><button class="btn" data-act="export">⬇ Export backup</button>
     <button class="btn sec" data-act="import-backup">⬆ Restore</button></div>
     <button class="btn sec wide" data-act="export-excel">📊 Export to Excel (clients · visits · appointments)</button>
+    <div class="sect" style="margin:18px 0 8px">☁️ Google Drive backup</div>
+    <label>Google Client ID <span style="font-weight:400">(one-time setup — ask me for the steps)</span></label>
+    <input id="set-gcid" placeholder="xxxxx.apps.googleusercontent.com" value="${esc(SET.gClientId||"")}">
+    <div class="btnrow"><button class="btn" data-act="drive-backup">☁️ Back up to Drive now</button></div>
+    <div class="switch" style="border:0"><div><div class="lab">Automatic daily backup</div>
+      <div class="sub">Runs silently the first time you open the app each day</div></div>
+      <button class="sw ${SET.driveAuto!==false?"on":""}" data-act="tgl-driveauto" aria-label="toggle daily backup"></button></div>
+    ${SET.lastDriveBackup?`<div class="hint">Last Drive backup: ${esc(SET.lastDriveBackup)} — file “NailBook Backup.json” in your Drive.</div>`:""}
     <input type="file" id="file-restore" accept=".json,application/json" hidden>
   </div>
   <div class="sect">Danger zone</div>
@@ -1273,12 +1281,14 @@ function blobToDataURL(b){return new Promise((res,rej)=>{const r=new FileReader(
 function dataURLToBlob(u){const[h,b64]=u.split(",");const mime=(h.match(/data:(.*?);/)||[])[1]||"image/jpeg";
   const bin=atob(b64);const a=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i);
   return new Blob([a],{type:mime});}
-async function exportBackup(){
-  toast("Preparing backup…");
+async function backupJSON(){
   const photos=[];
   for(const p of await dbAll("photos"))photos.push({id:p.id,dataUrl:await blobToDataURL(p.blob)});
-  const payload=JSON.stringify({app:"nailbook",version:1,exportedAt:new Date().toISOString(),
-    settings:SET,clients:S.clients,visits:S.visits,appts:S.appts,photos});
+  return JSON.stringify({app:"nailbook",version:1,exportedAt:new Date().toISOString(),
+    settings:SET,clients:S.clients,visits:S.visits,appts:S.appts,photos});}
+async function exportBackup(){
+  toast("Preparing backup…");
+  const payload=await backupJSON();
   const fname=`nailbook-backup-${todayISO()}.json`;
   if(window.claude&&window.claude.downloads){
     try{await window.claude.downloads.save({filename:fname,data:payload});toast("Backup saved ✓");return;}
@@ -1316,6 +1326,56 @@ function exportExcel(){
   a.href=URL.createObjectURL(new Blob([xml],{type:"application/vnd.ms-excel"}));
   a.download=`nailbook-${todayISO()}.xls`;document.body.appendChild(a);a.click();a.remove();
   toast("Excel file downloaded ✓");}
+let _gisReady=null,_gToken=null,_gTokenExp=0;
+function loadGIS(){if(_gisReady)return _gisReady;
+  _gisReady=new Promise((res,rej)=>{
+    if(window.google&&google.accounts)return res();
+    const s=document.createElement("script");
+    s.src="https://accounts.google.com/gsi/client";
+    s.onload=res;s.onerror=()=>{_gisReady=null;rej(new Error("couldn't load Google sign-in"));};
+    document.head.appendChild(s);});
+  return _gisReady;}
+async function driveToken(silent){
+  if(_gToken&&Date.now()<_gTokenExp-60000)return _gToken;
+  await loadGIS();
+  return new Promise((res,rej)=>{
+    try{
+      const tc=google.accounts.oauth2.initTokenClient({
+        client_id:SET.gClientId,
+        scope:"https://www.googleapis.com/auth/drive.file",
+        callback:t=>{if(t&&t.access_token){_gToken=t.access_token;
+          _gTokenExp=Date.now()+((+t.expires_in||3600)*1000);res(_gToken);}
+          else rej(new Error("no token"));},
+        error_callback:e=>rej(new Error((e&&e.type)||"authorization failed"))});
+      tc.requestAccessToken({prompt:silent?"none":""});
+    }catch(e){rej(e);}});}
+async function driveBackup(silent){
+  if(!SET.gClientId){if(!silent)toast("Paste your Google Client ID in Settings first");return false;}
+  try{
+    const tok=await driveToken(silent);
+    const payload=await backupJSON();
+    const q=encodeURIComponent("name='NailBook Backup.json' and trashed=false");
+    const list=await(await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`,
+      {headers:{Authorization:"Bearer "+tok}})).json();
+    const id=list.files&&list.files[0]&&list.files[0].id;
+    let resp;
+    if(id){resp=await fetch(`https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=media`,
+      {method:"PATCH",headers:{Authorization:"Bearer "+tok,"Content-Type":"application/json"},body:payload});}
+    else{
+      const bnd="nbk"+Math.random().toString(36).slice(2);
+      const body=`--${bnd}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`+
+        JSON.stringify({name:"NailBook Backup.json",mimeType:"application/json"})+
+        `\r\n--${bnd}\r\nContent-Type: application/json\r\n\r\n${payload}\r\n--${bnd}--`;
+      resp=await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+        {method:"POST",headers:{Authorization:"Bearer "+tok,"Content-Type":"multipart/related; boundary="+bnd},body});}
+    if(!resp.ok)throw new Error("upload failed ("+resp.status+")");
+    const now=new Date();
+    SET.lastDriveBackup=`${todayISO()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;saveSet();
+    if(!silent){toast("Backed up to Google Drive ✓");if(S.view==="settings")render();}
+    return true;
+  }catch(e){
+    if(!silent)toast("Drive backup failed — "+(e.message||"check connection"));
+    return false;}}
 async function restoreBackup(file){
   let j;try{j=JSON.parse(await file.text());}catch(e){toast("That file isn't a NailBook backup");return;}
   if(!j||j.app!=="nailbook"||!Array.isArray(j.clients)){toast("That file isn't a NailBook backup");return;}
@@ -1635,6 +1695,7 @@ document.addEventListener("click",async e=>{
       SET.artist=$("#set-artist").value.trim();
       SET.currency=$("#set-cur").value.trim();SET.waCC=$("#set-cc").value.replace(/\D/g,"");
       SET.salonName=$("#set-salon").value.trim();
+      if($("#set-gcid"))SET.gClientId=$("#set-gcid").value.trim();
       SET.dayFirst=$("#set-df").value==="1";
       SET.msgConfirm=$("#set-m1").value;SET.msgComeback=$("#set-m2").value;
       SET.servicesTxt=$("#set-services").value;
@@ -1644,6 +1705,11 @@ document.addEventListener("click",async e=>{
       await exportBackup();break;}
     case"import-backup":$("#file-restore").click();break;
     case"export-excel":exportExcel();break;
+    case"drive-backup":{const f=$("#set-gcid");
+      if(f&&f.value.trim()!==SET.gClientId){SET.gClientId=f.value.trim();saveSet();}
+      toast("Connecting to Google…");await driveBackup(false);break;}
+    case"tgl-driveauto":SET.driveAuto=SET.driveAuto===false?true:false;
+      b.classList.toggle("on",SET.driveAuto!==false);saveSet();break;
     case"logo-pick":$("#file-logo").click();break;
     case"logo-clear":await dbDel("photos","receipt-logo");toast("Logo removed — receipts show 💅 again");break;
     case"wipe":{if(!confirm("Delete ALL clients, visits, photos and appointments from this device?"))break;
@@ -1684,5 +1750,8 @@ document.addEventListener("change",async e=>{
 /* ---------------- boot ---------------- */
 if("serviceWorker" in navigator&&location.protocol==="https:")
   navigator.serviceWorker.register("./sw.js").catch(()=>{});
-(async function(){await loadAll();render();})();
+(async function(){await loadAll();render();
+  if(SET.gClientId&&SET.driveAuto!==false&&(SET.lastDriveBackup||"").slice(0,10)!==todayISO())
+    setTimeout(async()=>{if(await driveBackup(true))toast("☁️ Daily backup to Drive done ✓");},2500);
+})();
 </script>
